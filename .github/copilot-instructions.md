@@ -35,7 +35,7 @@ The repository maintains several reusable workflows:
 
 - Required inputs must be explicitly marked with `required: true`
 - Optional inputs should have meaningful defaults
-- Boolean inputs should default to safe values (e.g., `publish-to-repo: true`)
+- Boolean inputs should default to sensible values based on the workflow's purpose
 - String inputs should include example values in descriptions
 
 ### Container Usage
