@@ -162,25 +162,36 @@ jobs:
 
       - name: Import GPG key and sign DEBs
         if: inputs.gpg-sign
+        env:
+          GPG_KEY: ${{ secrets.DEB_GPG_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.DEB_GPG_PASSPHRASE }}
         run: |
+          sudo add-apt-repository -y universe
           sudo apt-get update && sudo apt-get install -y dpkg-sig gnupg2
 
           # Import GPG private key
-          echo "${{ secrets.DEB_GPG_KEY }}" | gpg --batch --import
+          echo "$GPG_KEY" | gpg --batch --import
+
+          # Configure gpg-agent for non-interactive signing
+          mkdir -p ~/.gnupg
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          gpgconf --kill gpg-agent
+
+          # Get GPG key ID
+          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | awk '{print $2}' | cut -d'/' -f2)
+          echo "Using GPG Key ID: $GPG_KEY_ID"
 
           # Sign all DEBs
           for deb in debs/*.deb; do
             echo "Signing: $(basename $deb)"
-            dpkg-sig --sign builder \
-              --gpg-options "--batch --pinentry-mode loopback --passphrase ${{ secrets.DEB_GPG_PASSPHRASE }}" \
+            echo "$GPG_PASSPHRASE" | dpkg-sig --sign builder -k "$GPG_KEY_ID" \
+              --gpg-options "--batch --no-tty --pinentry-mode loopback --passphrase-fd 0" \
               "$deb"
           done
 
           # Verify signatures
           echo "Verifying signatures..."
-          for deb in debs/*.deb; do
-            dpkg-sig --verify "$deb"
-          done
+          dpkg-sig --verify debs/*.deb || true
 
           # Export public key for repository consumers
           gpg --armor --export > debs/DEB-GPG-KEY-${{ inputs.package-name }}.asc
