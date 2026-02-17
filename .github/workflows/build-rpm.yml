@@ -235,8 +235,8 @@ jobs:
           
           ### For manual installation from releases:
           ```bash
-          # Download RPM from releases
-          wget https://github.com/${{ github.repository }}/releases/download/v1.0.0/${{ inputs.package-name }}.rpm
+          # Download RPM from releases (replace VERSION with actual release tag)
+          wget https://github.com/${{ github.repository }}/releases/download/VERSION/${{ inputs.package-name }}.rpm
           sudo dnf install ./${{ inputs.package-name }}.rpm
           ```
           
@@ -271,8 +271,8 @@ jobs:
             <div class="repo-config">
               <h2>Manual Installation</h2>
               <p>Download RPM files from GitHub Releases:</p>
-              <pre># Download from releases
-          wget https://github.com/${{ github.repository }}/releases/download/v1.0.0/${{ inputs.package-name }}.rpm
+              <pre># Download from releases (replace VERSION with actual release tag)
+          wget https://github.com/${{ github.repository }}/releases/download/VERSION/${{ inputs.package-name }}.rpm
           
           # Install locally
           sudo dnf install ./${{ inputs.package-name }}.rpm</pre>
@@ -282,9 +282,9 @@ jobs:
               <h2>Repository Metadata</h2>
               <p>Repository metadata is available for the following architectures:</p>
               <ul>
-                <li><a href="fedora/43/x86_64/">x86_64 (64-bit Intel/AMD)</a></li>
-                <li><a href="fedora/43/aarch64/">aarch64 (64-bit ARM)</a></li>
-                <li><a href="fedora/43/noarch/">noarch (Architecture independent)</a></li>
+                <li><a href="fedora/${{ inputs.fedora-version || '43' }}/x86_64/">x86_64 (64-bit Intel/AMD)</a></li>
+                <li><a href="fedora/${{ inputs.fedora-version || '43' }}/aarch64/">aarch64 (64-bit ARM)</a></li>
+                <li><a href="fedora/${{ inputs.fedora-version || '43' }}/noarch/">noarch (Architecture independent)</a></li>
               </ul>
             </div>
             
