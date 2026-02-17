@@ -3,6 +3,8 @@
 This repository contains reusable GitHub Actions workflows that can be used across all Xibo Players repositories. By centralizing workflows here, we maintain consistency and reduce duplication.
 
 > **⚠️ Initial Setup Required**: Before the Quick Links below work, the `gh-pages` branch needs to be initialized. See [GH-PAGES-SETUP.md](GH-PAGES-SETUP.md) for instructions or run `./scripts/init-gh-pages.sh`.
+> 
+> **🌐 Custom Domain**: Want to use `dnf.xiboplayer.org` instead of the GitHub Pages URL? See [CUSTOM-DOMAIN-SETUP.md](CUSTOM-DOMAIN-SETUP.md) for complete setup instructions.
 
 ## 🔗 Quick Links
 
