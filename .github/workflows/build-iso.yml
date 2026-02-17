@@ -275,7 +275,35 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           name: "${{ inputs.package-name }} Kiosk ${{ github.ref_name }}"
-          body: ${{ inputs.release-body || format('## {0} Kiosk Images\n\n### Installation Methods\n\n#### Installer ISO (Recommended)\nBoot from USB and install automatically:\n```bash\nsudo dd if={0}-kiosk-installer_*_x86_64.iso of=/dev/sdX bs=8M status=progress\n```\n\n#### Disk Images\n- **QCOW2** (x86_64): For GNOME Boxes, virt-manager, QEMU\n- **Raw.xz** (x86_64/aarch64): For Balena Etcher or dd\n\n```bash\nxz -dc {0}-kiosk_*_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress\n```\n\n### Default Credentials\n- User: `xibo` / Password: `xibo`\n- Root: `root` (locked by default)\n\n⚠️ **Change passwords after first login!**\n\n### Verification\n```bash\nsha256sum -c SHA256SUMS\n```', inputs.package-name) }}
+          body: |
+            ## ${{ inputs.package-name }} Kiosk Images
+
+            ### Installation Methods
+
+            #### Installer ISO (Recommended)
+            Boot from USB and install automatically:
+            ```bash
+            sudo dd if=${{ inputs.package-name }}-kiosk-installer_*_x86_64.iso of=/dev/sdX bs=8M status=progress
+            ```
+
+            #### Disk Images
+            - **QCOW2** (x86_64): For GNOME Boxes, virt-manager, QEMU
+            - **Raw.xz** (x86_64/aarch64): For Balena Etcher or dd
+
+            ```bash
+            xz -dc ${{ inputs.package-name }}-kiosk_*_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
+            ```
+
+            ### Default Credentials
+            - User: `xibo` / Password: `xibo`
+            - Root: `root` (locked by default)
+
+            ⚠️ **Change passwords after first login!**
+
+            ### Verification
+            ```bash
+            sha256sum -c SHA256SUMS
+            ```
           files: |
             release/*
           draft: false
