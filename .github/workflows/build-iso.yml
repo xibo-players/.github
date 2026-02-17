@@ -248,30 +248,43 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-installer-iso]
+    if: startsWith(github.ref, 'refs/tags/v') && always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-installer-iso.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.package-name }}-iso
-          path: dist/
+          path: artifacts/
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.iso" -o -name "*.qcow2" -o -name "*.raw.xz" \) -exec mv {} release/ \;
+          ls -lah release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
 
       - uses: softprops/action-gh-release@v2
         with:
-          name: "${{ inputs.package-name }} ${{ github.ref_name }}"
-          body: ${{ inputs.release-body || format('## {0} ISO Image\n\n### Installation\nBoot from the ISO image to install {0}.\n\n### Verification\n```bash\nsha256sum {0}-*.iso\n```', inputs.package-name) }}
-          files: dist/*.iso
+          name: "${{ inputs.package-name }} Kiosk ${{ github.ref_name }}"
+          body: ${{ inputs.release-body || format('## {0} Kiosk Images\n\n### Installation Methods\n\n#### Installer ISO (Recommended)\nBoot from USB and install automatically:\n```bash\nsudo dd if={0}-kiosk-installer_*_x86_64.iso of=/dev/sdX bs=8M status=progress\n```\n\n#### Disk Images\n- **QCOW2** (x86_64): For GNOME Boxes, virt-manager, QEMU\n- **Raw.xz** (x86_64/aarch64): For Balena Etcher or dd\n\n```bash\nxz -dc {0}-kiosk_*_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress\n```\n\n### Default Credentials\n- User: `xibo` / Password: `xibo`\n- Root: `root` (locked by default)\n\n⚠️ **Change passwords after first login!**\n\n### Verification\n```bash\nsha256sum -c SHA256SUMS\n```', inputs.package-name) }}
+          files: |
+            release/*
           draft: false
           prerelease: false
 
   publish-iso:
     name: Publish to gh-pages
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-installer-iso]
+    if: startsWith(github.ref, 'refs/tags/v') && always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-installer-iso.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -281,12 +294,13 @@ jobs:
         with:
           ref: gh-pages
           path: gh-pages
+          fetch-depth: 1
         continue-on-error: true
 
       - name: Initialize gh-pages if needed
         run: |
-          if [ ! -d "gh-pages" ]; then
-            mkdir -p gh-pages/iso
+          if [ ! -d "gh-pages/.git" ]; then
+            mkdir -p gh-pages
             cd gh-pages
             git init
             git config user.name "github-actions[bot]"
@@ -294,49 +308,109 @@ jobs:
             git checkout -b gh-pages
           fi
 
-      - uses: actions/download-artifact@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.package-name }}-iso
-          path: isos/
+          path: artifacts/
 
       - name: Setup ISO repository
         run: |
-          mkdir -p gh-pages/iso
-          cp isos/*.iso gh-pages/iso/ 2>/dev/null || true
-          cd gh-pages/iso
+          mkdir -p gh-pages/images
+          
+          # Move all images to gh-pages
+          find artifacts -type f \( -name "*.iso" -o -name "*.qcow2" -o -name "*.raw.xz" \) -exec cp {} gh-pages/images/ \;
+          
           # Generate checksums
-          sha256sum *.iso > SHA256SUMS 2>/dev/null || true
+          cd gh-pages/images
+          sha256sum * > SHA256SUMS 2>/dev/null || true
+          
           # Create index file
-          cat > index.html << EOF
+          cat > index.html << 'EOF'
           <!DOCTYPE html>
           <html>
           <head>
-            <title>${{ inputs.package-name }} ISO Downloads</title>
+            <title>Xibo Players - Kiosk Images</title>
             <style>
-              body { font-family: Arial, sans-serif; margin: 40px; }
+              body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
               h1 { color: #333; }
+              h2 { color: #666; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
+              .image-list { background: #f9f9f9; padding: 20px; border-radius: 5px; }
               ul { list-style-type: none; padding: 0; }
-              li { margin: 10px 0; }
-              a { color: #0066cc; text-decoration: none; }
+              li { margin: 10px 0; padding: 10px; background: white; border-radius: 3px; }
+              a { color: #0066cc; text-decoration: none; font-weight: bold; }
               a:hover { text-decoration: underline; }
+              .size { color: #666; font-size: 0.9em; }
+              code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+              pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
             </style>
           </head>
           <body>
-            <h1>${{ inputs.package-name }} ISO Images</h1>
-            <ul>
+            <h1>Xibo Players - Kiosk Images</h1>
+            
+            <h2>Available Images</h2>
+            <div class="image-list">
+              <ul>
           EOF
-          for iso in *.iso; do
-            if [ -f "$iso" ]; then
-              size=$(du -h "$iso" | cut -f1)
-              echo "      <li><a href=\"$iso\">$iso</a> ($size)</li>" >> index.html
+          
+          for file in *.iso *.qcow2 *.raw.xz; do
+            if [ -f "$file" ]; then
+              size=$(du -h "$file" | cut -f1)
+              echo "        <li><a href=\"$file\">$file</a> <span class=\"size\">($size)</span></li>" >> index.html
             fi
           done
-          echo "    </ul>" >> index.html
-          echo "    <p><a href=\"SHA256SUMS\">Download SHA256SUMS</a></p>" >> index.html
-          echo "  </body></html>" >> index.html
+          
+          cat >> index.html << 'EOF'
+              </ul>
+            </div>
+            
+            <h2>Installation</h2>
+            
+            <h3>Installer ISO (Recommended for physical hardware)</h3>
+            <p>Flash to USB and boot:</p>
+            <pre>sudo dd if=*-installer_*.iso of=/dev/sdX bs=8M status=progress</pre>
+            
+            <h3>Disk Images</h3>
+            <p><strong>QCOW2</strong> - For VMs (GNOME Boxes, virt-manager):</p>
+            <pre>qemu-system-x86_64 -enable-kvm -m 2G -drive file=*-kiosk_*.qcow2</pre>
+            
+            <p><strong>Raw.xz</strong> - For physical hardware:</p>
+            <pre>xz -dc *-kiosk_*.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress</pre>
+            
+            <h2>Verification</h2>
+            <p>Download and verify checksums:</p>
+            <p><a href="SHA256SUMS">SHA256SUMS</a></p>
+            <pre>sha256sum -c SHA256SUMS</pre>
+            
+            <h2>Default Credentials</h2>
+            <ul>
+              <li><code>xibo</code> / <code>xibo</code> (kiosk user)</li>
+              <li><code>root</code> / <code>root</code> (locked by default)</li>
+            </ul>
+            <p><strong>⚠️ Change passwords after first login!</strong></p>
+            
+            <hr>
+            <p><small>Updated: $(date -u)</small></p>
+          </body>
+          </html>
+          EOF
+          
+          echo "Images published:"
+          ls -lah
 
-      - uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: gh-pages
-          keep_files: true
+      - name: Push to gh-pages
+        run: |
+          cd gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git commit -m "Update kiosk images - ${{ inputs.package-name }}"
+          git pull --rebase "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages || true
+          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
