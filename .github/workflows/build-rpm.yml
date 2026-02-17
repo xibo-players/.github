@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install rpm tools
-        run: sudo apt-get update && sudo apt-get install -y rpm rpm-build createrepo-c
+        run: sudo apt-get update && sudo apt-get install -y rpm rpm-build createrepo-c systemd
 
       - uses: pnpm/action-setup@v4
         if: inputs.build-command != ''
@@ -156,90 +156,91 @@ jobs:
 
       - name: Publish RPMs to repo
         run: |
-          # Create proper repository structure
-          mkdir -p gh-pages/rpm/fedora/43/x86_64
-          mkdir -p gh-pages/rpm/fedora/43/aarch64
-          mkdir -p gh-pages/rpm/fedora/43/noarch
+          # Create repository metadata without storing actual RPM files
+          # RPMs are only in GitHub Releases
+          mkdir -p /tmp/rpm-repo/x86_64
+          mkdir -p /tmp/rpm-repo/aarch64
+          mkdir -p /tmp/rpm-repo/noarch
           
-          # Distribute RPMs by architecture
+          # Categorize RPMs by architecture in temp directory
           for rpm in rpms/*.rpm; do
             if [ -f "$rpm" ]; then
               case "$rpm" in
                 *.x86_64.rpm)
-                  echo "Copying x86_64: $(basename $rpm)"
-                  cp "$rpm" gh-pages/rpm/fedora/43/x86_64/
+                  echo "Processing x86_64: $(basename $rpm)"
+                  cp "$rpm" /tmp/rpm-repo/x86_64/
                   ;;
                 *.aarch64.rpm)
-                  echo "Copying aarch64: $(basename $rpm)"
-                  cp "$rpm" gh-pages/rpm/fedora/43/aarch64/
+                  echo "Processing aarch64: $(basename $rpm)"
+                  cp "$rpm" /tmp/rpm-repo/aarch64/
                   ;;
                 *.noarch.rpm)
-                  echo "Copying noarch: $(basename $rpm)"
-                  cp "$rpm" gh-pages/rpm/fedora/43/x86_64/
-                  cp "$rpm" gh-pages/rpm/fedora/43/aarch64/
-                  cp "$rpm" gh-pages/rpm/fedora/43/noarch/
+                  echo "Processing noarch: $(basename $rpm)"
+                  cp "$rpm" /tmp/rpm-repo/x86_64/
+                  cp "$rpm" /tmp/rpm-repo/aarch64/
+                  cp "$rpm" /tmp/rpm-repo/noarch/
                   ;;
               esac
             fi
           done
           
-          # Create repository metadata for each architecture
-          echo "Creating repository metadata..."
-          if [ "$(ls -A gh-pages/rpm/fedora/43/x86_64/*.rpm 2>/dev/null)" ]; then
-            createrepo_c --update gh-pages/rpm/fedora/43/x86_64/
-          fi
-          
-          if [ "$(ls -A gh-pages/rpm/fedora/43/aarch64/*.rpm 2>/dev/null)" ]; then
-            createrepo_c --update gh-pages/rpm/fedora/43/aarch64/
-          fi
-          
-          if [ "$(ls -A gh-pages/rpm/fedora/43/noarch/*.rpm 2>/dev/null)" ]; then
-            createrepo_c --update gh-pages/rpm/fedora/43/noarch/
-          fi
+          # Generate metadata for each architecture
+          echo "Generating repository metadata..."
+          for arch in x86_64 aarch64 noarch; do
+            if ls /tmp/rpm-repo/$arch/*.rpm 1> /dev/null 2>&1; then
+              createrepo_c /tmp/rpm-repo/$arch/
+              # Copy ONLY metadata (repodata directory) to gh-pages
+              mkdir -p gh-pages/rpm/fedora/43/$arch
+              cp -r /tmp/rpm-repo/$arch/repodata gh-pages/rpm/fedora/43/$arch/
+              echo "✓ Metadata created for $arch"
+            fi
+          done
           
           # Create index.html for easy browsing
           cat > gh-pages/rpm/index.html << 'EOF'
           <!DOCTYPE html>
           <html>
           <head>
-            <title>Xibo Players RPM Repository</title>
+            <title>Xibo Players - Download RPMs</title>
             <style>
               body { font-family: Arial, sans-serif; margin: 40px; }
               h1 { color: #333; }
-              .repo-config { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
+              .download-section { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
               pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
-              .arch { margin: 20px 0; }
+              .note { background: #fffacd; padding: 10px; border-left: 4px solid #ffd700; margin: 20px 0; }
             </style>
           </head>
           <body>
-            <h1>Xibo Players RPM Repository</h1>
+            <h1>Xibo Players - RPM Downloads</h1>
             
-            <div class="repo-config">
-              <h2>Repository Configuration</h2>
-              <p>Add this repository to your Fedora system:</p>
-              <pre>sudo tee /etc/yum.repos.d/xibo-players.repo &lt;&lt;'REPO'
-          [xibo-players]
-          name=Xibo Players
-          baseurl=https://xibo-players.github.io/.github/rpm/fedora/$releasever/$basearch/
-          enabled=1
-          gpgcheck=0
-          REPO</pre>
-              
-              <p>Then install packages:</p>
-              <pre>sudo dnf install your-package-name</pre>
+            <div class="note">
+              <strong>📦 RPM Storage:</strong> All RPM packages are stored in <strong>GitHub Releases</strong>.<br>
+              This page contains only repository metadata for package management tools.
             </div>
             
-            <div class="arch">
-              <h2>Available Architectures</h2>
+            <div class="download-section">
+              <h2>🔽 Download RPMs</h2>
+              <p>Download RPM packages directly from GitHub Releases:</p>
+              <pre>https://github.com/${{ github.repository }}/releases</pre>
+              
+              <h3>Manual Installation</h3>
+              <pre># Download from releases page, then:
+          sudo dnf install ./package-name-*.rpm</pre>
+            </div>
+            
+            <div class="download-section">
+              <h2>📋 Repository Metadata</h2>
+              <p>This site contains repository metadata (repodata) for package management integration.</p>
+              <p>Repository metadata structure:</p>
               <ul>
-                <li><a href="fedora/43/x86_64/">x86_64 (64-bit Intel/AMD)</a></li>
-                <li><a href="fedora/43/aarch64/">aarch64 (64-bit ARM)</a></li>
-                <li><a href="fedora/43/noarch/">noarch (Architecture independent)</a></li>
+                <li><a href="fedora/43/x86_64/repodata/">x86_64 metadata</a></li>
+                <li><a href="fedora/43/aarch64/repodata/">aarch64 metadata</a></li>
+                <li><a href="fedora/43/noarch/repodata/">noarch metadata</a></li>
               </ul>
             </div>
             
             <hr>
-            <p><small>Last updated: $(date -u)</small></p>
+            <p><small>Last updated: $(date -u) | RPMs hosted in <a href="https://github.com/${{ github.repository }}/releases">GitHub Releases</a></small></p>
           </body>
           </html>
           EOF
