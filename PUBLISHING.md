@@ -64,17 +64,9 @@ To update the GitHub Pages site:
 1. Run the workflow again with `force: true` option
 2. Or manually delete the gh-pages branch and re-run
 
-## Alternative: Manual Publishing
+## Alternative: Using Build Workflows
 
-If you have push permissions, you can manually create gh-pages:
-
-```bash
-# Run the initialization script
-./scripts/init-gh-pages.sh
-
-# Push the branch
-git push -u origin gh-pages
-```
+The build workflows (build-rpm.yml, build-deb.yml, build-iso.yml) will automatically create the gh-pages branch if it doesn't exist when they need to publish artifacts. However, this approach may not create all the index pages initially.
 
 ## Enabling GitHub Pages
 
