@@ -231,12 +231,16 @@ jobs:
       - name: Publish RPMs metadata to repo
         run: |
           # Determine the release tag/version for baseurl
+          # For tagged builds, use the specific tag (e.g., v0.2.0)
+          # For non-tagged builds, use "latest" which GitHub automatically redirects to the most recent release
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             RELEASE_TAG="${{ github.ref_name }}"
           else
             RELEASE_TAG="latest"
           fi
           
+          # Baseurl points to release root where RPMs are stored flat (not in architecture subdirectories)
+          # RPM filenames include architecture suffix (e.g., package-0.2.0-1.fc43.x86_64.rpm)
           BASEURL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}"
           echo "Using baseurl: ${BASEURL}"
           
