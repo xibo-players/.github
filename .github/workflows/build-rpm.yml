@@ -26,9 +26,6 @@ on:
       node-version:
         type: string
         default: '22'
-      pnpm-version:
-        type: string
-        default: '10'
       default-version:
         type: string
         default: '0.2.0'
@@ -56,8 +53,6 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         if: inputs.build-command != ''
-        with:
-          version: ${{ inputs.pnpm-version }}
 
       - uses: actions/setup-node@v4
         if: inputs.build-command != ''
