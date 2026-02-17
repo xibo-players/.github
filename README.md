@@ -2,6 +2,8 @@
 
 This repository contains reusable GitHub Actions workflows that can be used across all Xibo Players repositories. By centralizing workflows here, we maintain consistency and reduce duplication.
 
+> **⚠️ Initial Setup Required**: Before the Quick Links below work, the `gh-pages` branch needs to be initialized. See [GH-PAGES-SETUP.md](GH-PAGES-SETUP.md) for instructions or run `./scripts/init-gh-pages.sh`.
+
 ## 🔗 Quick Links
 
 - **📦 Browse Published RPMs**: https://xibo-players.github.io/.github/rpm/
