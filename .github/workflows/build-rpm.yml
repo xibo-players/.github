@@ -155,6 +155,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y createrepo-c
 
       - name: Publish RPMs to repo
+        env:
+          REPO_NAME: ${{ github.repository }}
         run: |
           # Create repository metadata without storing actual RPM files
           # RPMs are only in GitHub Releases
@@ -221,7 +223,7 @@ jobs:
             <div class="download-section">
               <h2>🔽 Download RPMs</h2>
               <p>Download RPM packages directly from GitHub Releases:</p>
-              <pre>https://github.com/${{ github.repository }}/releases</pre>
+              <pre>https://github.com/${REPO_NAME}/releases</pre>
               
               <h3>Manual Installation</h3>
               <pre># Download from releases page, then:
@@ -240,7 +242,7 @@ jobs:
             </div>
             
             <hr>
-            <p><small>Last updated: \$(date -u) | RPMs hosted in <a href="https://github.com/${{ github.repository }}/releases">GitHub Releases</a></small></p>
+            <p><small>Last updated: $(date -u) | RPMs hosted in <a href="https://github.com/${REPO_NAME}/releases">GitHub Releases</a></small></p>
           </body>
           </html>
           EOF
