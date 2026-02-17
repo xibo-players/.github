@@ -197,7 +197,7 @@ jobs:
           done
           
           # Create index.html for easy browsing
-          cat > gh-pages/rpm/index.html << 'EOF'
+          cat > gh-pages/rpm/index.html << EOF
           <!DOCTYPE html>
           <html>
           <head>
@@ -240,7 +240,7 @@ jobs:
             </div>
             
             <hr>
-            <p><small>Last updated: $(date -u) | RPMs hosted in <a href="https://github.com/${{ github.repository }}/releases">GitHub Releases</a></small></p>
+            <p><small>Last updated: \$(date -u) | RPMs hosted in <a href="https://github.com/${{ github.repository }}/releases">GitHub Releases</a></small></p>
           </body>
           </html>
           EOF
