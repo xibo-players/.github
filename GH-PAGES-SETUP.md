@@ -2,7 +2,7 @@
 
 ## Problem
 
-The URLs documented in this repository (like https://xibo-players.github.io/.github/rpm/) do not exist yet because the `gh-pages` branch hasn't been created.
+The URLs documented in this repository (like https://dnf.xiboplayer.org/rpm/) require the `gh-pages` branch to be initialized and GitHub Pages to be configured with the custom domain.
 
 ## Solution
 
@@ -60,13 +60,15 @@ After the gh-pages branch exists, ensure GitHub Pages is enabled:
 
 ## Verification
 
-Once enabled, the following URLs should be accessible:
-- https://xibo-players.github.io/.github/ - Main index
-- https://xibo-players.github.io/.github/rpm/ - RPM repository index
-- https://xibo-players.github.io/.github/images/ - Kiosk images index
-- https://xibo-players.github.io/.github/scripts/setup-repo.sh - Setup script
+Once enabled and the custom domain (dnf.xiboplayer.org) is configured, the following URLs should be accessible:
+- https://dnf.xiboplayer.org/ - Main index
+- https://dnf.xiboplayer.org/rpm/ - RPM repository index
+- https://dnf.xiboplayer.org/images/ - Kiosk images index
+- https://dnf.xiboplayer.org/scripts/setup-repo.sh - Setup script
 
 The RPM repository structure will be:
-- https://xibo-players.github.io/.github/rpm/fedora/43/x86_64/
-- https://xibo-players.github.io/.github/rpm/fedora/43/aarch64/
-- https://xibo-players.github.io/.github/rpm/fedora/43/noarch/
+- https://dnf.xiboplayer.org/rpm/fedora/43/x86_64/
+- https://dnf.xiboplayer.org/rpm/fedora/43/aarch64/
+- https://dnf.xiboplayer.org/rpm/fedora/43/noarch/
+
+**Note:** The custom domain `dnf.xiboplayer.org` is now configured. See [CUSTOM-DOMAIN-SETUP.md](CUSTOM-DOMAIN-SETUP.md) for details on the custom domain setup.

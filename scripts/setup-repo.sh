@@ -6,7 +6,7 @@
 set -e
 
 REPO_NAME="xibo-players"
-REPO_URL="https://xibo-players.github.io/.github/rpm/fedora/\$releasever/\$basearch/"
+REPO_URL="https://dnf.xiboplayer.org/rpm/fedora/\$releasever/\$basearch/"
 REPO_FILE="/etc/yum.repos.d/${REPO_NAME}.repo"
 
 echo "==================================="
@@ -78,5 +78,5 @@ echo "  dnf search xibo"
 echo "  dnf install <package-name>"
 echo ""
 echo "Available packages can be browsed at:"
-echo "  https://xibo-players.github.io/.github/rpm/"
+echo "  https://dnf.xiboplayer.org/rpm/"
 echo ""
