@@ -54,10 +54,25 @@ jobs:
       default-version: '0.2.0'
 ```
 
+**Alternative: Using RPM Spec File**
+```yaml
+jobs:
+  build-rpm:
+    uses: xibo-players/.github/.github/workflows/build-rpm.yml@main
+    with:
+      package-name: 'xiboplayer-electron'
+      build-command: 'pnpm run build:linux'
+      rpm-spec: 'xiboplayer-electron.spec'  # Provide spec file instead of script
+      rpm-output-dir: 'dist'
+      node-version: '22'
+      default-version: '0.2.0'
+```
+
 **Inputs:**
 - `package-name` (required): RPM package name
 - `build-command`: Build command before RPM (optional)
 - `rpm-script`: Path to RPM build script (default: `build-rpm.sh`)
+- `rpm-spec`: Path to RPM spec file (optional, e.g. `package.spec`). If provided, uses `rpmbuild` instead of `rpm-script`
 - `rpm-output-dir`: Directory where RPM files are output (default: `dist`)
 - `node-version`: Node.js version (default: `22`)
 - `default-version`: Default version if not tagged (default: `0.2.0`)
@@ -66,9 +81,13 @@ jobs:
 - `create-github-release`: Create GitHub Release for tags (default: `true` - only runs on tags)
 
 **Features:**
-- Installs RPM build tools
+- Uses Fedora 43 container for native RPM building
+- Installs RPM build tools (rpm-build, rpmdevtools, createrepo_c)
 - Runs optional build command with pnpm caching
-- Validates RPM script exists before running
+- **Two build approaches supported:**
+  - **Spec file approach**: Provide `.spec` file, workflow runs `rpmbuild` automatically
+  - **Script approach**: Provide custom `build-rpm.sh` script for full control
+- Validates spec file or build script exists before running
 - **Publishes to gh-pages dnf repository on every successful build** (configurable)
 - Creates GitHub releases for tags (configurable)
 - **Publishes to gh-pages dnf repository with proper structure:**
@@ -76,6 +95,7 @@ jobs:
   - `rpm/fedora/43/aarch64/` - 64-bit ARM packages  
   - `rpm/fedora/43/noarch/` - Architecture-independent packages
 - Automatically creates repository metadata with `createrepo_c`
+- All RPM operations run in Fedora container for consistency
 
 **Publishing Behavior:**
 
@@ -86,6 +106,60 @@ By default, RPMs are published to the yum/dnf repository on **every successful b
 - ✅ Manual workflow runs → RPMs published
 
 To disable automatic publishing, set `publish-to-repo: false` in your workflow call.
+
+**Build Approaches:**
+
+*Option 1: Using RPM Spec File (Recommended)*
+
+Provide a `.spec` file and let the workflow handle `rpmbuild`:
+
+```spec
+Name:           xiboplayer-electron
+Version:        0.2.0
+Release:        1%{?dist}
+Summary:        Xibo Player Electron Application
+
+License:        AGPLv3+
+URL:            https://github.com/xibo-players/xiboplayer-electron
+Source0:        %{name}-%{version}.tar.gz
+
+BuildArch:      x86_64
+Requires:       libX11, libXrandr
+
+%description
+Xibo digital signage player built with Electron.
+
+%prep
+%setup -q
+
+%install
+mkdir -p %{buildroot}/opt/xiboplayer
+cp -r dist/* %{buildroot}/opt/xiboplayer/
+
+%files
+/opt/xiboplayer/*
+
+%changelog
+* Mon Feb 17 2026 Builder <builder@example.com> - 0.2.0-1
+- Initial RPM release
+```
+
+The workflow will:
+- Setup rpmbuild directory structure
+- Copy your spec file
+- Update the version automatically
+- Create source tarball from build artifacts
+- Run `rpmbuild -bb` to build the RPM
+
+*Option 2: Using Build Script*
+
+For more control, provide a custom `build-rpm.sh` script:
+
+```bash
+#!/bin/bash
+VERSION="$1"
+# Your custom RPM build logic here
+```
 
 **Installing Published RPMs:**
 
