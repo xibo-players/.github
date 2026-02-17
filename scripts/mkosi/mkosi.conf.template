@@ -1,0 +1,71 @@
+# mkosi Configuration Template for Xibo Player Kiosk Images
+# ==========================================================
+# This template creates bootable kiosk images for Xibo digital signage players.
+# Customize the Packages list for your specific player requirements.
+
+[Distribution]
+Distribution=fedora
+Release=43
+
+[Output]
+Format=disk
+ImageId=xibo-kiosk
+OutputDirectory=output
+
+[Content]
+Bootable=yes
+Bootloader=systemd-boot
+UnifiedKernelImages=no
+RootPassword=root
+ExtraTrees=mkosi-extra
+
+# Core packages for a kiosk system
+Packages=
+    @core
+    kernel-core
+    efibootmgr
+    systemd-boot-unsigned
+    gdm
+    gnome-kiosk
+    gnome-kiosk-script-session
+    
+    # Media and browser support
+    firefox
+    vlc
+    gstreamer1-plugins-base
+    gstreamer1-plugins-good
+    gstreamer1-plugins-bad-free
+    gstreamer1-plugins-ugly-free
+    gstreamer1-plugin-openh264
+    gstreamer1-plugin-libav
+    
+    # Kiosk utilities
+    zenity
+    dunst
+    unclutter
+    opendoas
+    keyd
+    
+    # Networking
+    avahi
+    nss-mdns
+    wireguard-tools
+    NetworkManager-wifi
+    linux-firmware
+    
+    # Graphics
+    mesa-va-drivers
+    libva
+    
+    # Codecs
+    ffmpeg
+    ffmpeg-libs
+
+# Remove unnecessary packages
+RemovePackages=
+    ffmpeg-free
+    gnome-initial-setup
+    gnome-tour
+
+[Runtime]
+Firmware=uefi

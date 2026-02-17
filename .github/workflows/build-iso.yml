@@ -1,0 +1,416 @@
+name: Build ISO (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      package-name:
+        required: true
+        type: string
+        description: 'Package name for the kiosk image (e.g. xiboplayer-electron)'
+      kickstart-file:
+        type: string
+        default: 'kickstart/xibo-kiosk.ks'
+        description: 'Path to Kickstart file for installer ISO'
+      mkosi-config:
+        type: string
+        default: 'mkosi.conf'
+        description: 'Path to mkosi configuration file'
+      build-installer:
+        type: boolean
+        default: true
+        description: 'Build installer ISO using kickstart'
+      build-disk-images:
+        type: boolean
+        default: true
+        description: 'Build disk images (QCOW2 and raw) using mkosi'
+      architectures:
+        type: string
+        default: 'x86_64'
+        description: 'Comma-separated list of architectures (x86_64, aarch64)'
+      default-version:
+        type: string
+        default: '0.2.0'
+      release-body:
+        type: string
+        default: ''
+        description: 'Custom release body markdown. Empty = auto-generated.'
+
+jobs:
+  build-disk-images-x86_64:
+    if: inputs.build-disk-images == true && contains(inputs.architectures, 'x86_64')
+    name: Build Disk Images (x86_64)
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:43
+      options: --privileged
+
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y \
+            git \
+            mkosi \
+            systemd-container \
+            qemu-img \
+            xz
+
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare mkosi configuration
+        run: |
+          if [ -f "${{ inputs.mkosi-config }}" ]; then
+            echo "Using provided mkosi configuration"
+            cp "${{ inputs.mkosi-config }}" mkosi.conf
+          else
+            echo "Using template mkosi configuration"
+            cp scripts/mkosi/mkosi.conf.template mkosi.conf
+            # Customize ImageId
+            sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}-kiosk/" mkosi.conf
+          fi
+
+      - name: Set file permissions
+        run: |
+          # Set permissions for any scripts in mkosi-extra
+          find mkosi-extra -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
+          find mkosi-extra -type f -name "doas.conf" -exec chmod 600 {} \; 2>/dev/null || true
+
+      - name: Build disk image with mkosi
+        run: |
+          mkosi --force --image-version=${{ steps.version.outputs.version }}
+
+      - name: Convert and compress images
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          cd output
+          # Rename raw image
+          mv *.raw ${PACKAGE}-kiosk_${VERSION}_x86_64.raw 2>/dev/null || true
+          
+          # Create QCOW2 for VMs
+          if [ -f ${PACKAGE}-kiosk_${VERSION}_x86_64.raw ]; then
+            qemu-img convert -f raw -O qcow2 -c ${PACKAGE}-kiosk_${VERSION}_x86_64.raw ${PACKAGE}-kiosk_${VERSION}_x86_64.qcow2
+            qemu-img resize ${PACKAGE}-kiosk_${VERSION}_x86_64.qcow2 16G
+            
+            # Compress raw image
+            xz -T0 -9 ${PACKAGE}-kiosk_${VERSION}_x86_64.raw
+          fi
+
+      - name: List output
+        run: ls -lah output/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-images-x86_64
+          path: |
+            output/*.qcow2
+            output/*.raw.xz
+          retention-days: 30
+
+  build-disk-images-aarch64:
+    if: inputs.build-disk-images == true && contains(inputs.architectures, 'aarch64')
+    name: Build Disk Images (aarch64)
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: fedora:43
+      options: --privileged
+
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y \
+            git \
+            mkosi \
+            systemd-container \
+            xz
+
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare mkosi configuration
+        run: |
+          if [ -f "${{ inputs.mkosi-config }}" ]; then
+            cp "${{ inputs.mkosi-config }}" mkosi.conf
+          else
+            cp scripts/mkosi/mkosi.conf.template mkosi.conf
+            sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}-kiosk/" mkosi.conf
+          fi
+
+      - name: Set file permissions
+        run: |
+          find mkosi-extra -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
+          find mkosi-extra -type f -name "doas.conf" -exec chmod 600 {} \; 2>/dev/null || true
+
+      - name: Build disk image
+        run: mkosi --force --image-version=${{ steps.version.outputs.version }}
+
+      - name: Rename and compress
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          cd output
+          mv *.raw ${PACKAGE}-kiosk_${VERSION}_aarch64.raw 2>/dev/null || true
+          if [ -f ${PACKAGE}-kiosk_${VERSION}_aarch64.raw ]; then
+            xz -T0 -9 ${PACKAGE}-kiosk_${VERSION}_aarch64.raw
+          fi
+
+      - name: List output
+        run: ls -lah output/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-images-aarch64
+          path: output/*.raw.xz
+          retention-days: 30
+
+  build-installer-iso:
+    if: inputs.build-installer == true
+    name: Build Installer ISO
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:43
+      options: --privileged
+
+    steps:
+      - name: Install dependencies
+        run: dnf install -y lorax pykickstart curl
+
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download Fedora netinstall ISO
+        run: |
+          curl -L -o /tmp/fedora-netinst.iso \
+            "https://ftp.plusline.net/fedora/linux/releases/43/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-43-1.6.iso"
+
+      - name: Validate Kickstart file
+        run: |
+          if [ -f "${{ inputs.kickstart-file }}" ]; then
+            echo "Using provided kickstart file: ${{ inputs.kickstart-file }}"
+            ksvalidator "${{ inputs.kickstart-file }}" || echo "Warning: Kickstart validation failed"
+          else
+            echo "Error: Kickstart file not found: ${{ inputs.kickstart-file }}"
+            exit 1
+          fi
+
+      - name: Build installer ISO
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          mkksiso --skip-mkefiboot --ks "${{ inputs.kickstart-file }}" \
+            /tmp/fedora-netinst.iso \
+            ${PACKAGE}-kiosk-installer_${VERSION}_x86_64.iso
+
+      - name: List ISO
+        run: ls -lah *.iso
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-installer-iso
+          path: "*.iso"
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-installer-iso]
+    if: startsWith(github.ref, 'refs/tags/v') && always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-installer-iso.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.iso" -o -name "*.qcow2" -o -name "*.raw.xz" \) -exec mv {} release/ \;
+          ls -lah release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: "${{ inputs.package-name }} Kiosk ${{ github.ref_name }}"
+          body: ${{ inputs.release-body || format('## {0} Kiosk Images\n\n### Installation Methods\n\n#### Installer ISO (Recommended)\nBoot from USB and install automatically:\n```bash\nsudo dd if={0}-kiosk-installer_*_x86_64.iso of=/dev/sdX bs=8M status=progress\n```\n\n#### Disk Images\n- **QCOW2** (x86_64): For GNOME Boxes, virt-manager, QEMU\n- **Raw.xz** (x86_64/aarch64): For Balena Etcher or dd\n\n```bash\nxz -dc {0}-kiosk_*_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress\n```\n\n### Default Credentials\n- User: `xibo` / Password: `xibo`\n- Root: `root` (locked by default)\n\n⚠️ **Change passwords after first login!**\n\n### Verification\n```bash\nsha256sum -c SHA256SUMS\n```', inputs.package-name) }}
+          files: |
+            release/*
+          draft: false
+          prerelease: false
+
+  publish-iso:
+    name: Publish to gh-pages
+    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-installer-iso]
+    if: startsWith(github.ref, 'refs/tags/v') && always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-installer-iso.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 1
+        continue-on-error: true
+
+      - name: Initialize gh-pages if needed
+        run: |
+          if [ ! -d "gh-pages/.git" ]; then
+            mkdir -p gh-pages
+            cd gh-pages
+            git init
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git checkout -b gh-pages
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Setup ISO repository
+        run: |
+          mkdir -p gh-pages/images
+          
+          # Move all images to gh-pages
+          find artifacts -type f \( -name "*.iso" -o -name "*.qcow2" -o -name "*.raw.xz" \) -exec cp {} gh-pages/images/ \;
+          
+          # Generate checksums
+          cd gh-pages/images
+          sha256sum * > SHA256SUMS 2>/dev/null || true
+          
+          # Create index file
+          cat > index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Xibo Players - Kiosk Images</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+              h1 { color: #333; }
+              h2 { color: #666; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
+              .image-list { background: #f9f9f9; padding: 20px; border-radius: 5px; }
+              ul { list-style-type: none; padding: 0; }
+              li { margin: 10px 0; padding: 10px; background: white; border-radius: 3px; }
+              a { color: #0066cc; text-decoration: none; font-weight: bold; }
+              a:hover { text-decoration: underline; }
+              .size { color: #666; font-size: 0.9em; }
+              code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+              pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
+            </style>
+          </head>
+          <body>
+            <h1>Xibo Players - Kiosk Images</h1>
+            
+            <h2>Available Images</h2>
+            <div class="image-list">
+              <ul>
+          EOF
+          
+          for file in *.iso *.qcow2 *.raw.xz; do
+            if [ -f "$file" ]; then
+              size=$(du -h "$file" | cut -f1)
+              echo "        <li><a href=\"$file\">$file</a> <span class=\"size\">($size)</span></li>" >> index.html
+            fi
+          done
+          
+          cat >> index.html << 'EOF'
+              </ul>
+            </div>
+            
+            <h2>Installation</h2>
+            
+            <h3>Installer ISO (Recommended for physical hardware)</h3>
+            <p>Flash to USB and boot:</p>
+            <pre>sudo dd if=*-installer_*.iso of=/dev/sdX bs=8M status=progress</pre>
+            
+            <h3>Disk Images</h3>
+            <p><strong>QCOW2</strong> - For VMs (GNOME Boxes, virt-manager):</p>
+            <pre>qemu-system-x86_64 -enable-kvm -m 2G -drive file=*-kiosk_*.qcow2</pre>
+            
+            <p><strong>Raw.xz</strong> - For physical hardware:</p>
+            <pre>xz -dc *-kiosk_*.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress</pre>
+            
+            <h2>Verification</h2>
+            <p>Download and verify checksums:</p>
+            <p><a href="SHA256SUMS">SHA256SUMS</a></p>
+            <pre>sha256sum -c SHA256SUMS</pre>
+            
+            <h2>Default Credentials</h2>
+            <ul>
+              <li><code>xibo</code> / <code>xibo</code> (kiosk user)</li>
+              <li><code>root</code> / <code>root</code> (locked by default)</li>
+            </ul>
+            <p><strong>⚠️ Change passwords after first login!</strong></p>
+            
+            <hr>
+            <p><small>Updated: $(date -u)</small></p>
+          </body>
+          </html>
+          EOF
+          
+          echo "Images published:"
+          ls -lah
+
+      - name: Push to gh-pages
+        run: |
+          cd gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git commit -m "Update kiosk images - ${{ inputs.package-name }}"
+          git pull --rebase "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages || true
+          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
