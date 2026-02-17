@@ -171,7 +171,97 @@ jobs:
 
 ---
 
-### 4. Test (`test.yml`)
+### 4. Build ISO (`build-iso.yml`)
+
+Builds bootable kiosk images for Xibo players using modern mkosi tool. Supports installer ISOs, VM images (QCOW2), and raw disk images for both x86_64 and aarch64.
+
+**Usage:**
+```yaml
+name: Build Kiosk Images
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-images:
+    uses: xibo-players/.github/.github/workflows/build-iso.yml@main
+    with:
+      package-name: 'xiboplayer-electron'
+      kickstart-file: 'kickstart/xibo-kiosk.ks'
+      mkosi-config: 'mkosi.conf'
+      build-installer: true
+      build-disk-images: true
+      architectures: 'x86_64,aarch64'
+      default-version: '0.2.0'
+```
+
+**Inputs:**
+- `package-name` (required): Package name for the kiosk image
+- `kickstart-file`: Path to Kickstart file (default: `kickstart/xibo-kiosk.ks`)
+- `mkosi-config`: Path to mkosi config (default: `mkosi.conf`)
+- `build-installer`: Build installer ISO (default: `true`)
+- `build-disk-images`: Build disk images (default: `true`)
+- `architectures`: Architectures to build (default: `x86_64`)
+- `default-version`: Default version (default: `0.2.0`)
+- `release-body`: Custom release body markdown (optional)
+
+**Features:**
+- **Installer ISO**: Kickstart-based automated Fedora installation
+- **Disk Images**:
+  - QCOW2 for VMs (x86_64)
+  - Compressed raw images for physical hardware (x86_64, aarch64)
+- Uses modern **mkosi** tool (not legacy genisoimage)
+- GNOME Kiosk for locked-down display mode
+- Auto-login and kiosk session startup
+- Published to gh-pages with installation instructions
+
+**What You Need to Provide:**
+
+1. **Kickstart File** (`kickstart/xibo-kiosk.ks`):
+   - Use the template at `scripts/mkosi/kickstart/xibo-kiosk.ks.template`
+   - Customize package installation and configuration
+   - Add your player's repository and packages
+
+2. **mkosi Configuration** (`mkosi.conf`) (optional):
+   - Use the template at `scripts/mkosi/mkosi.conf.template`
+   - Customize packages and system configuration
+   - Or let the workflow use the default template
+
+3. **mkosi-extra directory** (optional):
+   - Additional files to include in the image
+   - Scripts, configurations, etc.
+
+**Image Types Produced:**
+
+| Type | Filename Pattern | Use Case |
+|------|------------------|----------|
+| Installer ISO | `*-kiosk-installer_*_x86_64.iso` | Boot and auto-install to hardware |
+| QCOW2 | `*-kiosk_*_x86_64.qcow2` | GNOME Boxes, virt-manager, QEMU |
+| Raw (compressed) | `*-kiosk_*_x86_64.raw.xz` | Flash to USB/SD for hardware |
+| Raw ARM | `*-kiosk_*_aarch64.raw.xz` | ARM devices (Raspberry Pi, etc.) |
+
+**Published Images:**
+
+Images are published to gh-pages at: `https://xibo-players.github.io/.github/images/`
+
+Users can download and flash:
+```bash
+# Flash installer ISO
+sudo dd if=xiboplayer-kiosk-installer_1.0.0_x86_64.iso of=/dev/sdX bs=8M
+
+# Or flash raw image
+xz -dc xiboplayer-kiosk_1.0.0_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M
+```
+
+**Default Credentials:**
+- User: `xibo` / Password: `xibo`
+- Root: `root` (locked by default on installer ISO)
+
+---
+
+### 5. Test (`test.yml`)
 
 Runs automated tests.
 
