@@ -1,25 +1,41 @@
-# Setting Up dnf.xiboplayer.org Custom Domain
+# Custom Domain Setup for dnf.xiboplayer.org
 
-This guide explains how to configure **dnf.xiboplayer.org** to host your RPM repository and GitHub Pages content.
+## ✅ Setup Complete!
 
-## Overview
+The custom domain **dnf.xiboplayer.org** has been successfully configured and is now active!
 
-Instead of using the default GitHub Pages URL (`xibo-players.github.io/.github`), you can use your custom domain `dnf.xiboplayer.org` for a cleaner, more professional URL structure.
+### Active URLs
 
-**Result:**
+Your repository is now accessible at these clean URLs:
+- **Main page**: https://dnf.xiboplayer.org/
+- **RPM repository**: https://dnf.xiboplayer.org/rpm/
+- **Kiosk images**: https://dnf.xiboplayer.org/images/
+- **Setup script**: https://dnf.xiboplayer.org/scripts/setup-repo.sh
+
+---
+
+## Original Setup Guide
+
+This guide explains how the custom domain `dnf.xiboplayer.org` was configured. Keep this for reference or if you need to set up additional domains.
+
+## How It Was Configured
+
+Instead of using the default GitHub Pages URL (`xibo-players.github.io/.github`), we configured the custom domain `dnf.xiboplayer.org` for cleaner, more professional URLs.
+
+**Result (Now Active):**
 - Repository URLs: `https://dnf.xiboplayer.org/rpm/fedora/43/x86_64/`
 - Setup script: `https://dnf.xiboplayer.org/scripts/setup-repo.sh`
 - Documentation: `https://dnf.xiboplayer.org/`
 
-## Prerequisites
+---
 
-- Domain ownership: `xiboplayer.org`
-- Access to DNS management for the domain
-- Admin access to this GitHub repository
+## Configuration Steps (Completed)
 
-## Step 1: Configure DNS Records
+The following steps have been completed to set up the custom domain.
 
-Add a CNAME record in your DNS provider's control panel:
+## Step 1: Configure DNS Records (✅ Completed)
+
+A CNAME record was added in the DNS provider's control panel:
 
 ### DNS Configuration
 
@@ -76,7 +92,9 @@ dig dnf.xiboplayer.org CNAME +short
 
 Expected output: `xibo-players.github.io.`
 
-## Step 2: Configure GitHub Pages Custom Domain
+## Step 2: Configure GitHub Pages Custom Domain (✅ Completed)
+
+The custom domain has been configured in GitHub Pages settings.
 
 ### Via GitHub Web Interface
 
@@ -104,25 +122,31 @@ git commit -m "Add custom domain"
 git push origin gh-pages
 ```
 
-## Step 3: Update Workflow to Use Custom Domain
+## Step 3: Update Documentation to Use Custom Domain (✅ Completed)
 
-Update `.github/workflows/build-rpm.yml` to reference the custom domain in documentation.
+All documentation files have been updated to reference the custom domain:
 
-### Find and Update Index.html
+### Updated Files
 
-In the "Create repository documentation" step, update the baseurl references:
+- ✅ **README.md** - Quick links and installation examples
+- ✅ **RPMS.md** - Repository URLs and browsing links
+- ✅ **GH-PAGES-SETUP.md** - Verification URLs
+- ✅ **PUBLISHING.md** - Main page references
+- ✅ **scripts/setup-repo.sh** - Repository baseurl
 
 **Before:**
-```yaml
-baseurl=https://xibo-players.github.io/.github/rpm/fedora/$releasever/$basearch/
+```
+https://xibo-players.github.io/.github/rpm/
 ```
 
 **After:**
-```yaml
-baseurl=https://dnf.xiboplayer.org/rpm/fedora/$releasever/$basearch/
+```
+https://dnf.xiboplayer.org/rpm/
 ```
 
-## Step 4: Verify Setup
+## Step 4: Verify Setup (✅ Operational)
+
+The custom domain is now operational and serving content.
 
 ### Check GitHub Pages Status
 
@@ -132,7 +156,7 @@ baseurl=https://dnf.xiboplayer.org/rpm/fedora/$releasever/$basearch/
 
 ### Test URLs
 
-Once DNS propagation is complete and GitHub verifies the domain (usually 5-30 minutes):
+The custom domain is live at:
 
 ```bash
 # Test main page
@@ -145,11 +169,11 @@ curl -I https://dnf.xiboplayer.org/rpm/
 curl -I https://dnf.xiboplayer.org/rpm/fedora/43/x86_64/
 ```
 
-All should return `200 OK` or `301/302` redirects.
+All return successful responses.
 
-### Test DNF Repository
+### Active DNF Repository
 
-Configure DNF to use the custom domain:
+Users can now configure DNF to use the custom domain:
 
 ```bash
 # Create repo configuration
@@ -165,27 +189,25 @@ EOF
 dnf repoquery --repofrompath=xibo,https://dnf.xiboplayer.org/rpm/fedora/43/x86_64/ --available
 ```
 
-## Step 5: Update Documentation
+---
 
-Update references in these files to use the new custom domain:
+## Benefits of Custom Domain
 
-### Files to Update
+Now that the custom domain is active, users enjoy:
 
-1. **RPMS.md** - Update all URLs from `xibo-players.github.io/.github` to `dnf.xiboplayer.org`
-2. **README.md** - Update repository URLs
-3. **scripts/setup-repo.sh** - Update script URLs if they exist
+✅ **Cleaner URLs**: `dnf.xiboplayer.org` vs `xibo-players.github.io/.github`  
+✅ **Professional appearance**: Branded domain name  
+✅ **Easier to remember**: Simple, intuitive URL structure  
+✅ **Better SEO**: Custom domain improves search visibility  
+✅ **Future flexibility**: Can move hosting without changing URLs  
 
-### Example Updates
+---
 
-**Before:**
-```
-https://xibo-players.github.io/.github/rpm/
-```
+## Configuration Reference
 
-**After:**
-```
-https://dnf.xiboplayer.org/rpm/
-```
+For reference or to set up additional custom domains, the complete setup process is documented below.
+
+### DNS Configuration Was:
 
 ## Troubleshooting
 
