@@ -58,17 +58,30 @@ jobs:
 - `node-version`: Node.js version (default: `22`)
 - `default-version`: Default version if not tagged (default: `0.2.0`)
 - `release-body`: Custom release body markdown (optional)
+- `publish-to-repo`: Publish to gh-pages repository (default: `true` - publishes on every build)
+- `create-github-release`: Create GitHub Release for tags (default: `true` - only runs on tags)
 
 **Features:**
 - Installs RPM build tools
 - Runs optional build command with pnpm caching
 - Validates RPM script exists before running
-- Creates GitHub releases for tags
+- **Publishes to gh-pages dnf repository on every successful build** (configurable)
+- Creates GitHub releases for tags (configurable)
 - **Publishes to gh-pages dnf repository with proper structure:**
   - `rpm/fedora/43/x86_64/` - 64-bit Intel/AMD packages
   - `rpm/fedora/43/aarch64/` - 64-bit ARM packages  
   - `rpm/fedora/43/noarch/` - Architecture-independent packages
 - Automatically creates repository metadata with `createrepo_c`
+
+**Publishing Behavior:**
+
+By default, RPMs are published to the yum/dnf repository on **every successful build**, making them immediately available to users. This means:
+- ✅ Push to main → RPMs published
+- ✅ Pull request builds → RPMs published (if workflow runs)
+- ✅ Tagged releases → RPMs published + GitHub Release created
+- ✅ Manual workflow runs → RPMs published
+
+To disable automatic publishing, set `publish-to-repo: false` in your workflow call.
 
 **Installing Published RPMs:**
 

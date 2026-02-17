@@ -118,14 +118,21 @@ To verify that RPMs have been published:
 ## For Repository Maintainers
 
 RPMs are automatically published when:
-- A tag starting with `v` is pushed (e.g., `v1.0.0`)
+- **Every successful build** (by default) - not just tags!
 - The `build-rpm.yml` workflow completes successfully
-- The `publish-rpm` job pushes to the `gh-pages` branch
+- The `publish-rpm` job runs (default: enabled for all builds)
+
+**Publishing Trigger Options:**
+- ✅ Push to main branch → RPMs published
+- ✅ Tagged releases (e.g., `v1.0.0`) → RPMs published + GitHub Release created
+- ✅ Manual workflow dispatch → RPMs published
+- ⚙️ Can be disabled by setting `publish-to-repo: false` in workflow call
 
 The publishing process:
 1. Builds RPM packages
 2. Uploads as GitHub Actions artifacts
-3. Publishes to GitHub Releases (for tags)
-4. Organizes by architecture in `gh-pages` branch
-5. Runs `createrepo_c` to generate repository metadata
-6. GitHub Pages serves the `gh-pages` branch content
+3. Publishes to gh-pages yum/dnf repository (every build)
+4. Creates GitHub Release (only for tags)
+5. Organizes by architecture in `gh-pages` branch
+6. Runs `createrepo_c` to generate repository metadata
+7. GitHub Pages serves the `gh-pages` branch content
