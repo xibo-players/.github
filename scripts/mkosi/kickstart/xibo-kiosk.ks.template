@@ -1,0 +1,227 @@
+#version=F43
+# Xibo Player Kiosk Kickstart Template
+# ======================================
+# Automated Fedora 43 installation for Xibo digital signage players
+#
+# Usage:
+#   1. Customize this file for your player (package names, repository URLs)
+#   2. Host it on a web server or embed in an ISO
+#   3. Boot from Fedora netinstall and add to kernel cmdline:
+#      inst.ks=https://your-server.com/path/to/xibo-kiosk.ks
+#
+# Or create a custom ISO with this kickstart embedded using mkksiso.
+
+# Installation settings
+text
+skipx
+firstboot --disable
+reboot --eject
+
+# Localization (customize as needed)
+lang en_US.UTF-8
+keyboard --xlayouts='us'
+timezone UTC --utc
+
+# Network - DHCP by default
+network --bootproto=dhcp --device=link --activate --onboot=yes
+network --hostname=xibo-kiosk
+
+# Root password - CHANGE THIS or use --lock
+rootpw --lock
+
+# User configuration - CHANGE PASSWORD
+user --name=xibo --groups=wheel --password=xibo --plaintext --gecos="Xibo Kiosk User"
+
+# Disk configuration - use entire disk
+clearpart --all --initlabel
+autopart --type=plain --nohome
+
+# Bootloader
+bootloader --append="quiet rhgb"
+
+# Package selection
+%packages
+@core
+@hardware-support
+@fonts
+
+# Display manager and kiosk
+gdm
+gnome-kiosk
+gnome-kiosk-script-session
+
+# Media playback
+vlc
+firefox
+gstreamer1-plugins-base
+gstreamer1-plugins-good
+gstreamer1-plugins-bad-free
+gstreamer1-plugins-ugly-free
+gstreamer1-plugin-openh264
+gstreamer1-plugin-libav
+
+# Kiosk utilities
+zenity
+dunst
+unclutter
+opendoas
+keyd
+
+# Networking
+avahi
+nss-mdns
+wireguard-tools
+NetworkManager-wifi
+
+# Remove unnecessary packages
+-gnome-initial-setup
+-gnome-tour
+%end
+
+# RPMFusion repositories (for full codec support)
+%post --erroronfail
+# Add RPMFusion repos
+dnf install -y \
+  https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-43.noarch.rpm \
+  https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-43.noarch.rpm
+
+# Swap ffmpeg-free for ffmpeg (full codec support)
+dnf swap -y ffmpeg-free ffmpeg --allowerasing || true
+%end
+
+# Install your Xibo player package
+# CUSTOMIZE THIS SECTION for your specific player
+%post --erroronfail
+# Example: Add your repository
+# cat > /etc/yum.repos.d/xiboplayer.repo << 'EOF'
+# [xiboplayer]
+# name=Xibo Player
+# baseurl=https://xibo-players.github.io/.github/rpm/packages/
+# enabled=1
+# gpgcheck=0
+# EOF
+
+# Example: Install your player package
+# dnf install -y your-xibo-player-package
+
+# For testing without a real player, you can install a dummy package
+# or skip this step
+echo "NOTE: Add your player installation commands here"
+%end
+
+# Configure xibo user and directories
+%post --erroronfail
+# Enable lingering for xibo user (allows user services to run without login)
+loginctl enable-linger xibo || true
+
+# Create directories
+mkdir -p /home/xibo/.local/bin
+mkdir -p /home/xibo/.local/share/xibo
+mkdir -p /home/xibo/Videos
+
+chown -R xibo:xibo /home/xibo
+%end
+
+# Configure GDM autologin
+%post --erroronfail
+cat > /etc/gdm/custom.conf << 'EOF'
+[daemon]
+AutomaticLoginEnable=True
+AutomaticLogin=xibo
+
+[security]
+
+[xdmcp]
+
+[chooser]
+
+[debug]
+EOF
+%end
+
+# Configure AccountsService (sets default session)
+%post --erroronfail
+mkdir -p /var/lib/AccountsService/users
+cat > /var/lib/AccountsService/users/xibo << 'EOF'
+[User]
+Session=gnome-kiosk-script-wayland
+SystemAccount=false
+EOF
+%end
+
+# Configure opendoas (allows xibo user to reboot/shutdown without password)
+%post --erroronfail
+cat > /etc/doas.conf << 'EOF'
+permit nopass xibo cmd reboot
+permit nopass xibo cmd shutdown
+EOF
+chmod 600 /etc/doas.conf
+%end
+
+# Create kiosk launcher script
+# CUSTOMIZE THIS for your player's launch command
+%post --erroronfail
+cat > /home/xibo/.local/bin/gnome-kiosk-script << 'EOF'
+#!/bin/bash
+# Xibo Player Kiosk Launcher
+# This script runs when the kiosk session starts
+
+# Set environment
+export DISPLAY=:0
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+
+# Wait for display to be ready
+sleep 3
+
+# Hide cursor
+unclutter &
+
+# Start your Xibo player here
+# Example: /usr/bin/your-xibo-player /home/xibo/.local/share/xibo
+
+# For testing, launch Firefox in kiosk mode
+firefox --kiosk "https://xibo.org.uk" &
+
+# Keep session alive
+wait
+EOF
+chmod 755 /home/xibo/.local/bin/gnome-kiosk-script
+chown xibo:xibo /home/xibo/.local/bin/gnome-kiosk-script
+
+# Add local bin to PATH
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> /home/xibo/.bashrc
+chown xibo:xibo /home/xibo/.bashrc
+%end
+
+# Create reboot/shutdown wrappers
+%post --erroronfail
+cat > /home/xibo/.local/bin/reboot << 'EOF'
+#!/bin/bash
+doas reboot
+EOF
+chmod 755 /home/xibo/.local/bin/reboot
+
+cat > /home/xibo/.local/bin/shutdown << 'EOF'
+#!/bin/bash
+doas shutdown -h now
+EOF
+chmod 755 /home/xibo/.local/bin/shutdown
+
+chown xibo:xibo /home/xibo/.local/bin/reboot /home/xibo/.local/bin/shutdown
+%end
+
+# Enable services
+%post --erroronfail
+systemctl enable gdm
+systemctl enable avahi-daemon
+systemctl set-default graphical.target
+%end
+
+# Final cleanup
+%post --erroronfail
+# Ensure all xibo files have correct ownership
+chown -R xibo:xibo /home/xibo
+
+# Clean dnf cache
+dnf clean all
+%end

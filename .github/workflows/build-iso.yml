@@ -6,26 +6,27 @@ on:
       package-name:
         required: true
         type: string
-        description: 'ISO package name (e.g. xiboplayer-electron)'
-      build-command:
+        description: 'Package name for the kiosk image (e.g. xiboplayer-electron)'
+      kickstart-file:
         type: string
-        default: ''
-        description: 'Build command before ISO creation (e.g. pnpm run build:linux). Empty = skip.'
-      iso-script:
+        default: 'kickstart/xibo-kiosk.ks'
+        description: 'Path to Kickstart file for installer ISO'
+      mkosi-config:
         type: string
-        default: 'build-iso.sh'
-        description: 'Path to the ISO build script'
-      iso-output-dir:
+        default: 'mkosi.conf'
+        description: 'Path to mkosi configuration file'
+      build-installer:
+        type: boolean
+        default: true
+        description: 'Build installer ISO using kickstart'
+      build-disk-images:
+        type: boolean
+        default: true
+        description: 'Build disk images (QCOW2 and raw) using mkosi'
+      architectures:
         type: string
-        default: 'dist'
-        description: 'Directory where ISO files are output'
-      iso-label:
-        type: string
-        default: 'XIBOPLAYER'
-        description: 'Volume label for the ISO image'
-      node-version:
-        type: string
-        default: '22'
+        default: 'x86_64'
+        description: 'Comma-separated list of architectures (x86_64, aarch64)'
       default-version:
         type: string
         default: '0.2.0'
@@ -35,34 +36,25 @@ on:
         description: 'Custom release body markdown. Empty = auto-generated.'
 
 jobs:
-  build:
-    name: Build ${{ inputs.package-name }} ISO
+  build-disk-images-x86_64:
+    if: inputs.build-disk-images == true && contains(inputs.architectures, 'x86_64')
+    name: Build Disk Images (x86_64)
     runs-on: ubuntu-latest
+    container:
+      image: fedora:43
+      options: --privileged
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install ISO tools
-        run: sudo apt-get update && sudo apt-get install -y genisoimage xorriso isolinux syslinux-utils
-
-      - uses: pnpm/action-setup@v4
-        if: inputs.build-command != ''
-        with:
-          version: 8
-
-      - uses: actions/setup-node@v4
-        if: inputs.build-command != ''
-        with:
-          node-version: ${{ inputs.node-version }}
-          cache: 'pnpm'
-
       - name: Install dependencies
-        if: inputs.build-command != ''
-        run: pnpm install --no-frozen-lockfile
+        run: |
+          dnf install -y \
+            git \
+            mkosi \
+            systemd-container \
+            qemu-img \
+            xz
 
-      - name: Build application
-        if: inputs.build-command != ''
-        run: ${{ inputs.build-command }}
+      - uses: actions/checkout@v4
 
       - name: Determine version
         id: version
@@ -76,20 +68,182 @@ jobs:
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build ISO
+      - name: Prepare mkosi configuration
         run: |
-          if [ -f "${{ inputs.iso-script }}" ]; then
-            chmod +x ${{ inputs.iso-script }}
-            ./${{ inputs.iso-script }} "${{ steps.version.outputs.version }}" "${{ inputs.iso-label }}"
+          if [ -f "${{ inputs.mkosi-config }}" ]; then
+            echo "Using provided mkosi configuration"
+            cp "${{ inputs.mkosi-config }}" mkosi.conf
           else
-            echo "Error: ISO script ${{ inputs.iso-script }} not found"
-            exit 1
+            echo "Using template mkosi configuration"
+            cp scripts/mkosi/mkosi.conf.template mkosi.conf
+            # Customize ImageId
+            sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}-kiosk/" mkosi.conf
           fi
+
+      - name: Set file permissions
+        run: |
+          # Set permissions for any scripts in mkosi-extra
+          find mkosi-extra -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
+          find mkosi-extra -type f -name "doas.conf" -exec chmod 600 {} \; 2>/dev/null || true
+
+      - name: Build disk image with mkosi
+        run: |
+          mkosi --force --image-version=${{ steps.version.outputs.version }}
+
+      - name: Convert and compress images
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          cd output
+          # Rename raw image
+          mv *.raw ${PACKAGE}-kiosk_${VERSION}_x86_64.raw 2>/dev/null || true
+          
+          # Create QCOW2 for VMs
+          if [ -f ${PACKAGE}-kiosk_${VERSION}_x86_64.raw ]; then
+            qemu-img convert -f raw -O qcow2 -c ${PACKAGE}-kiosk_${VERSION}_x86_64.raw ${PACKAGE}-kiosk_${VERSION}_x86_64.qcow2
+            qemu-img resize ${PACKAGE}-kiosk_${VERSION}_x86_64.qcow2 16G
+            
+            # Compress raw image
+            xz -T0 -9 ${PACKAGE}-kiosk_${VERSION}_x86_64.raw
+          fi
+
+      - name: List output
+        run: ls -lah output/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.package-name }}-iso
-          path: ${{ inputs.iso-output-dir }}/*.iso
+          name: ${{ inputs.package-name }}-images-x86_64
+          path: |
+            output/*.qcow2
+            output/*.raw.xz
+          retention-days: 30
+
+  build-disk-images-aarch64:
+    if: inputs.build-disk-images == true && contains(inputs.architectures, 'aarch64')
+    name: Build Disk Images (aarch64)
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: fedora:43
+      options: --privileged
+
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y \
+            git \
+            mkosi \
+            systemd-container \
+            xz
+
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare mkosi configuration
+        run: |
+          if [ -f "${{ inputs.mkosi-config }}" ]; then
+            cp "${{ inputs.mkosi-config }}" mkosi.conf
+          else
+            cp scripts/mkosi/mkosi.conf.template mkosi.conf
+            sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}-kiosk/" mkosi.conf
+          fi
+
+      - name: Set file permissions
+        run: |
+          find mkosi-extra -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
+          find mkosi-extra -type f -name "doas.conf" -exec chmod 600 {} \; 2>/dev/null || true
+
+      - name: Build disk image
+        run: mkosi --force --image-version=${{ steps.version.outputs.version }}
+
+      - name: Rename and compress
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          cd output
+          mv *.raw ${PACKAGE}-kiosk_${VERSION}_aarch64.raw 2>/dev/null || true
+          if [ -f ${PACKAGE}-kiosk_${VERSION}_aarch64.raw ]; then
+            xz -T0 -9 ${PACKAGE}-kiosk_${VERSION}_aarch64.raw
+          fi
+
+      - name: List output
+        run: ls -lah output/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-images-aarch64
+          path: output/*.raw.xz
+          retention-days: 30
+
+  build-installer-iso:
+    if: inputs.build-installer == true
+    name: Build Installer ISO
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:43
+      options: --privileged
+
+    steps:
+      - name: Install dependencies
+        run: dnf install -y lorax pykickstart curl
+
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download Fedora netinstall ISO
+        run: |
+          curl -L -o /tmp/fedora-netinst.iso \
+            "https://ftp.plusline.net/fedora/linux/releases/43/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-43-1.6.iso"
+
+      - name: Validate Kickstart file
+        run: |
+          if [ -f "${{ inputs.kickstart-file }}" ]; then
+            echo "Using provided kickstart file: ${{ inputs.kickstart-file }}"
+            ksvalidator "${{ inputs.kickstart-file }}" || echo "Warning: Kickstart validation failed"
+          else
+            echo "Error: Kickstart file not found: ${{ inputs.kickstart-file }}"
+            exit 1
+          fi
+
+      - name: Build installer ISO
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          mkksiso --skip-mkefiboot --ks "${{ inputs.kickstart-file }}" \
+            /tmp/fedora-netinst.iso \
+            ${PACKAGE}-kiosk-installer_${VERSION}_x86_64.iso
+
+      - name: List ISO
+        run: ls -lah *.iso
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-installer-iso
+          path: "*.iso"
           retention-days: 30
 
   release:

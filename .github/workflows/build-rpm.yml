@@ -119,16 +119,23 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-rpm
+          path: rpms/
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
         with:
           ref: gh-pages
           path: gh-pages
+          fetch-depth: 1
         continue-on-error: true
 
       - name: Initialize gh-pages if needed
         run: |
-          if [ ! -d "gh-pages" ]; then
-            mkdir -p gh-pages/rpm/packages
+          if [ ! -d "gh-pages/.git" ]; then
+            mkdir -p gh-pages
             cd gh-pages
             git init
             git config user.name "github-actions[bot]"
@@ -136,21 +143,121 @@ jobs:
             git checkout -b gh-pages
           fi
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ inputs.package-name }}-rpm
-          path: rpms/
+      - name: Install createrepo
+        run: sudo apt-get update && sudo apt-get install -y createrepo-c
 
-      - name: Setup dnf repo
+      - name: Publish RPMs to repo
         run: |
-          mkdir -p gh-pages/rpm/packages
-          cp rpms/*.rpm gh-pages/rpm/packages/ 2>/dev/null || true
-          chmod -R 755 gh-pages/rpm
-          docker run --rm -v "$PWD/gh-pages/rpm:/repo:Z" fedora:latest \
-            bash -c "dnf install -y createrepo_c && createrepo_c /repo"
+          # Create proper repository structure
+          mkdir -p gh-pages/rpm/fedora/43/x86_64
+          mkdir -p gh-pages/rpm/fedora/43/aarch64
+          mkdir -p gh-pages/rpm/fedora/43/noarch
+          
+          # Distribute RPMs by architecture
+          for rpm in rpms/*.rpm; do
+            if [ -f "$rpm" ]; then
+              case "$rpm" in
+                *.x86_64.rpm)
+                  echo "Copying x86_64: $(basename $rpm)"
+                  cp "$rpm" gh-pages/rpm/fedora/43/x86_64/
+                  ;;
+                *.aarch64.rpm)
+                  echo "Copying aarch64: $(basename $rpm)"
+                  cp "$rpm" gh-pages/rpm/fedora/43/aarch64/
+                  ;;
+                *.noarch.rpm)
+                  echo "Copying noarch: $(basename $rpm)"
+                  cp "$rpm" gh-pages/rpm/fedora/43/x86_64/
+                  cp "$rpm" gh-pages/rpm/fedora/43/aarch64/
+                  cp "$rpm" gh-pages/rpm/fedora/43/noarch/
+                  ;;
+              esac
+            fi
+          done
+          
+          # Create repository metadata for each architecture
+          echo "Creating repository metadata..."
+          if [ "$(ls -A gh-pages/rpm/fedora/43/x86_64/*.rpm 2>/dev/null)" ]; then
+            createrepo_c --update gh-pages/rpm/fedora/43/x86_64/
+          fi
+          
+          if [ "$(ls -A gh-pages/rpm/fedora/43/aarch64/*.rpm 2>/dev/null)" ]; then
+            createrepo_c --update gh-pages/rpm/fedora/43/aarch64/
+          fi
+          
+          if [ "$(ls -A gh-pages/rpm/fedora/43/noarch/*.rpm 2>/dev/null)" ]; then
+            createrepo_c --update gh-pages/rpm/fedora/43/noarch/
+          fi
+          
+          # Create index.html for easy browsing
+          cat > gh-pages/rpm/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Xibo Players RPM Repository</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 40px; }
+              h1 { color: #333; }
+              .repo-config { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
+              pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
+              .arch { margin: 20px 0; }
+            </style>
+          </head>
+          <body>
+            <h1>Xibo Players RPM Repository</h1>
+            
+            <div class="repo-config">
+              <h2>Repository Configuration</h2>
+              <p>Add this repository to your Fedora system:</p>
+              <pre>sudo tee /etc/yum.repos.d/xibo-players.repo &lt;&lt;'REPO'
+          [xibo-players]
+          name=Xibo Players
+          baseurl=https://xibo-players.github.io/.github/rpm/fedora/$releasever/$basearch/
+          enabled=1
+          gpgcheck=0
+          REPO</pre>
+              
+              <p>Then install packages:</p>
+              <pre>sudo dnf install your-package-name</pre>
+            </div>
+            
+            <div class="arch">
+              <h2>Available Architectures</h2>
+              <ul>
+                <li><a href="fedora/43/x86_64/">x86_64 (64-bit Intel/AMD)</a></li>
+                <li><a href="fedora/43/aarch64/">aarch64 (64-bit ARM)</a></li>
+                <li><a href="fedora/43/noarch/">noarch (Architecture independent)</a></li>
+              </ul>
+            </div>
+            
+            <hr>
+            <p><small>Last updated: $(date -u)</small></p>
+          </body>
+          </html>
+          EOF
+          
+          echo "Repository structure:"
+          ls -laR gh-pages/rpm/
 
-      - uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: gh-pages
-          keep_files: true
+      - name: Push to gh-pages
+        run: |
+          cd gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          
+          # Check if there are changes
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git commit -m "Update RPM repository - ${{ inputs.package-name }}"
+          
+          # Pull with rebase to handle concurrent pushes
+          git pull --rebase "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages || true
+          
+          # Push changes
+          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

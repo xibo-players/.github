@@ -6,7 +6,7 @@ This repository contains reusable GitHub Actions workflows that can be used acro
 
 ### 1. Build RPM (`build-rpm.yml`)
 
-Builds RPM packages for Linux distributions.
+Builds RPM packages for Linux distributions and publishes them to a yum/dnf repository on gh-pages.
 
 **Usage:**
 ```yaml
@@ -45,7 +45,54 @@ jobs:
 - Runs optional build command with pnpm caching
 - Validates RPM script exists before running
 - Creates GitHub releases for tags
-- Publishes to gh-pages dnf repository
+- **Publishes to gh-pages dnf repository with proper structure:**
+  - `rpm/fedora/43/x86_64/` - 64-bit Intel/AMD packages
+  - `rpm/fedora/43/aarch64/` - 64-bit ARM packages  
+  - `rpm/fedora/43/noarch/` - Architecture-independent packages
+- Automatically creates repository metadata with `createrepo_c`
+
+**Installing Published RPMs:**
+
+Once your RPMs are published, users can install them from your gh-pages repository:
+
+```bash
+# Add the repository
+sudo tee /etc/yum.repos.d/xibo-players.repo <<'EOF'
+[xibo-players]
+name=Xibo Players
+baseurl=https://xibo-players.github.io/.github/rpm/fedora/$releasever/$basearch/
+enabled=1
+gpgcheck=0
+EOF
+
+# Install your package
+sudo dnf install your-package-name
+```
+
+Or use the setup script:
+
+```bash
+curl -fsSL https://xibo-players.github.io/.github/scripts/setup-repo.sh | sudo bash
+```
+
+**Repository Structure:**
+
+The workflow publishes RPMs to gh-pages in this structure:
+```
+rpm/
+├── index.html                    # Repository information page
+├── fedora/
+│   └── 43/
+│       ├── x86_64/
+│       │   ├── *.rpm
+│       │   └── repodata/        # Repository metadata
+│       ├── aarch64/
+│       │   ├── *.rpm
+│       │   └── repodata/
+│       └── noarch/
+│           ├── *.rpm
+│           └── repodata/
+```
 
 ---
 
