@@ -1,0 +1,188 @@
+name: Build ISO (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      package-name:
+        required: true
+        type: string
+        description: 'ISO package name (e.g. xiboplayer-electron)'
+      build-command:
+        type: string
+        default: ''
+        description: 'Build command before ISO creation (e.g. pnpm run build:linux). Empty = skip.'
+      iso-script:
+        type: string
+        default: 'build-iso.sh'
+        description: 'Path to the ISO build script'
+      iso-output-dir:
+        type: string
+        default: 'dist'
+        description: 'Directory where ISO files are output'
+      iso-label:
+        type: string
+        default: 'XIBOPLAYER'
+        description: 'Volume label for the ISO image'
+      node-version:
+        type: string
+        default: '22'
+      default-version:
+        type: string
+        default: '0.2.0'
+      release-body:
+        type: string
+        default: ''
+        description: 'Custom release body markdown. Empty = auto-generated.'
+
+jobs:
+  build:
+    name: Build ${{ inputs.package-name }} ISO
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ISO tools
+        run: sudo apt-get update && sudo apt-get install -y genisoimage xorriso isolinux syslinux-utils
+
+      - uses: pnpm/action-setup@v4
+        if: inputs.build-command != ''
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        if: inputs.build-command != ''
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        if: inputs.build-command != ''
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build application
+        if: inputs.build-command != ''
+        run: ${{ inputs.build-command }}
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build ISO
+        run: |
+          if [ -f "${{ inputs.iso-script }}" ]; then
+            chmod +x ${{ inputs.iso-script }}
+            ./${{ inputs.iso-script }} "${{ steps.version.outputs.version }}" "${{ inputs.iso-label }}"
+          else
+            echo "Error: ISO script ${{ inputs.iso-script }} not found"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-iso
+          path: ${{ inputs.iso-output-dir }}/*.iso
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-iso
+          path: dist/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: "${{ inputs.package-name }} ${{ github.ref_name }}"
+          body: ${{ inputs.release-body || format('## {0} ISO Image\n\n### Installation\nBoot from the ISO image to install {0}.\n\n### Verification\n```bash\nsha256sum {0}-*.iso\n```', inputs.package-name) }}
+          files: dist/*.iso
+          draft: false
+          prerelease: false
+
+  publish-iso:
+    name: Publish to gh-pages
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
+
+      - name: Initialize gh-pages if needed
+        run: |
+          if [ ! -d "gh-pages" ]; then
+            mkdir -p gh-pages/iso
+            cd gh-pages
+            git init
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git checkout -b gh-pages
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-iso
+          path: isos/
+
+      - name: Setup ISO repository
+        run: |
+          mkdir -p gh-pages/iso
+          cp isos/*.iso gh-pages/iso/ 2>/dev/null || true
+          cd gh-pages/iso
+          # Generate checksums
+          sha256sum *.iso > SHA256SUMS 2>/dev/null || true
+          # Create index file
+          cat > index.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>${{ inputs.package-name }} ISO Downloads</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 40px; }
+              h1 { color: #333; }
+              ul { list-style-type: none; padding: 0; }
+              li { margin: 10px 0; }
+              a { color: #0066cc; text-decoration: none; }
+              a:hover { text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <h1>${{ inputs.package-name }} ISO Images</h1>
+            <ul>
+          EOF
+          for iso in *.iso; do
+            if [ -f "$iso" ]; then
+              size=$(du -h "$iso" | cut -f1)
+              echo "      <li><a href=\"$iso\">$iso</a> ($size)</li>" >> index.html
+            fi
+          done
+          echo "    </ul>" >> index.html
+          echo "    <p><a href=\"SHA256SUMS\">Download SHA256SUMS</a></p>" >> index.html
+          echo "  </body></html>" >> index.html
+
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: gh-pages
+          keep_files: true
