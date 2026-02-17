@@ -236,8 +236,8 @@ jobs:
           ### For manual installation from releases:
           ```bash
           # Download RPM from releases
-          wget https://github.com/xibo-players/REPO-NAME/releases/download/v1.0.0/package-name.rpm
-          sudo dnf install ./package-name.rpm
+          wget https://github.com/${{ github.repository }}/releases/download/v1.0.0/${{ inputs.package-name }}.rpm
+          sudo dnf install ./${{ inputs.package-name }}.rpm
           ```
           
           ### For DNF repository (coming soon):
@@ -265,17 +265,17 @@ jobs:
             <div class="warning">
               <h2>⚠️ Important: Hybrid Repository Structure</h2>
               <p>This repository stores <strong>metadata only</strong> in gh-pages. Large RPM files (>100MB) are stored as GitHub Release assets.</p>
-              <p>For installation, please download RPMs directly from the <a href="https://github.com/xibo-players/xiboplayer-electron/releases">Releases page</a>.</p>
+              <p>For installation, please download RPMs directly from the <a href="https://github.com/${{ github.repository }}/releases">Releases page</a>.</p>
             </div>
             
             <div class="repo-config">
               <h2>Manual Installation</h2>
               <p>Download RPM files from GitHub Releases:</p>
               <pre># Download from releases
-          wget https://github.com/xibo-players/REPO-NAME/releases/download/v1.0.0/package-name.rpm
+          wget https://github.com/${{ github.repository }}/releases/download/v1.0.0/${{ inputs.package-name }}.rpm
           
           # Install locally
-          sudo dnf install ./package-name.rpm</pre>
+          sudo dnf install ./${{ inputs.package-name }}.rpm</pre>
             </div>
             
             <div class="arch">
