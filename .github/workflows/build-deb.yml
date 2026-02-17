@@ -1,0 +1,290 @@
+name: Build DEB (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      package-name:
+        required: true
+        type: string
+        description: 'DEB package name (e.g. xiboplayer-electron)'
+      build-command:
+        type: string
+        default: ''
+        description: 'Build command before DEB (e.g. pnpm run build:linux). Empty = skip.'
+      deb-script:
+        type: string
+        default: 'build-deb.sh'
+        description: 'Path to the DEB build script'
+      deb-output-dir:
+        type: string
+        default: 'dist'
+        description: 'Directory where DEB files are output'
+      node-version:
+        type: string
+        default: '22'
+      default-version:
+        type: string
+        default: '0.2.0'
+      release-body:
+        type: string
+        default: ''
+        description: 'Custom release body markdown. Empty = auto-generated.'
+      publish-to-repo:
+        type: boolean
+        default: true
+        description: 'Publish DEBs to gh-pages repository (default: true for all builds)'
+      create-github-release:
+        type: boolean
+        default: true
+        description: 'Create GitHub Release for tags (default: true, only runs on tags)'
+      ubuntu-version:
+        type: string
+        default: '24.04'
+        description: 'Ubuntu version for repository structure'
+
+jobs:
+  build:
+    name: Build ${{ inputs.package-name }} DEB
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deb tools
+        run: |
+          apt-get update
+          apt-get install -y dpkg-dev debhelper build-essential curl
+
+      - uses: pnpm/action-setup@v4
+        if: inputs.build-command != ''
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        if: inputs.build-command != ''
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        if: inputs.build-command != ''
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build application
+        if: inputs.build-command != ''
+        run: ${{ inputs.build-command }}
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build DEB
+        run: |
+          if [ -f "${{ inputs.deb-script }}" ]; then
+            chmod +x ${{ inputs.deb-script }}
+            ./${{ inputs.deb-script }} "${{ steps.version.outputs.version }}"
+          else
+            echo "Error: DEB script ${{ inputs.deb-script }} not found"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-deb
+          path: ${{ inputs.deb-output-dir }}/*.deb
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: inputs.create-github-release && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-deb
+          path: dist/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: "${{ inputs.package-name }} ${{ github.ref_name }}"
+          body: ${{ inputs.release-body || format('## {0}\n\n### Installation\n```bash\nsudo dpkg -i {0}_*.deb\nsudo apt-get install -f\n```', inputs.package-name) }}
+          files: dist/*.deb
+          draft: false
+          prerelease: false
+
+  publish-deb:
+    name: Publish to gh-pages apt repo
+    needs: build
+    if: inputs.publish-to-repo
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-deb
+          path: debs/
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 1
+        continue-on-error: true
+
+      - name: Initialize gh-pages if needed
+        run: |
+          if [ ! -d "gh-pages/.git" ]; then
+            mkdir -p gh-pages
+            cd gh-pages
+            git init
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git checkout -b gh-pages
+          fi
+
+      - name: Install apt repository tools
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev
+
+      - name: Publish DEBs metadata to repo
+        run: |
+          # Create proper repository structure in gh-pages
+          mkdir -p gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/amd64
+          mkdir -p gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/arm64
+          mkdir -p gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/all
+          
+          # Create temporary directories for metadata generation
+          mkdir -p /tmp/deb-repo-amd64
+          mkdir -p /tmp/deb-repo-arm64
+          mkdir -p /tmp/deb-repo-all
+          
+          # Distribute DEBs by architecture to temp directories for metadata generation
+          for deb in debs/*.deb; do
+            if [ -f "$deb" ]; then
+              ARCH=$(dpkg-deb -f "$deb" Architecture)
+              case "$ARCH" in
+                amd64)
+                  echo "Processing amd64: $(basename $deb)"
+                  cp "$deb" /tmp/deb-repo-amd64/
+                  ;;
+                arm64)
+                  echo "Processing arm64: $(basename $deb)"
+                  cp "$deb" /tmp/deb-repo-arm64/
+                  ;;
+                all)
+                  echo "Processing all: $(basename $deb)"
+                  cp "$deb" /tmp/deb-repo-amd64/
+                  cp "$deb" /tmp/deb-repo-arm64/
+                  cp "$deb" /tmp/deb-repo-all/
+                  ;;
+              esac
+            fi
+          done
+          
+          # Create repository metadata for each architecture
+          echo "Creating repository metadata..."
+          for arch_dir in /tmp/deb-repo-*; do
+            if [ "$(ls -A $arch_dir/*.deb 2>/dev/null)" ]; then
+              cd "$arch_dir"
+              dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz
+              dpkg-scanpackages . /dev/null > Packages
+              
+              # Determine target directory
+              if [[ "$arch_dir" == *"amd64"* ]]; then
+                target="gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/amd64"
+              elif [[ "$arch_dir" == *"arm64"* ]]; then
+                target="gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/arm64"
+              else
+                target="gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/all"
+              fi
+              
+              # Copy metadata to gh-pages
+              cp Packages Packages.gz "$target/"
+              cd -
+            fi
+          done
+          
+          echo "Repository metadata structure:"
+          ls -laR gh-pages/deb/
+
+      - name: Create repository documentation
+        run: |
+          # Create README.md
+          cat > gh-pages/deb/README.md << 'EOF'
+          # Xibo Players DEB Repository
+          
+          ## Installation
+          
+          ### Add Repository
+          ```bash
+          echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+          sudo apt-get update
+          ```
+          
+          ### Install Package
+          ```bash
+          sudo apt-get install ${{ inputs.package-name }}
+          ```
+          EOF
+          
+          # Create index.html
+          cat > gh-pages/deb/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Xibo Players DEB Repository</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 40px; }
+              h1 { color: #333; }
+              pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; }
+            </style>
+          </head>
+          <body>
+            <h1>📦 DEB Repository</h1>
+            <p>Architectures: <a href="ubuntu/24.04/amd64/">amd64</a> | <a href="ubuntu/24.04/arm64/">arm64</a> | <a href="ubuntu/24.04/all/">all</a></p>
+            <h2>Installation</h2>
+            <pre>echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+sudo apt-get update
+sudo apt-get install ${{ inputs.package-name }}</pre>
+          </body>
+          </html>
+          EOF
+
+      - name: Push to gh-pages
+        run: |
+          cd gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          
+          # Check if there are changes
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git commit -m "Update DEB repository - ${{ inputs.package-name }}"
+          
+          # Pull with rebase to handle concurrent pushes
+          git pull --rebase "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages || true
+          
+          # Push changes
+          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
