@@ -199,6 +199,7 @@ jobs:
           done
           
           # Create index.html for easy browsing
+          # Note: Using unquoted EOF (not 'EOF') to allow shell variable expansion of ${REPO_NAME}
           cat > gh-pages/rpm/index.html << EOF
           <!DOCTYPE html>
           <html>
