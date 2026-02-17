@@ -133,6 +133,8 @@ jobs:
     needs: build
     if: inputs.publish-to-repo
     runs-on: ubuntu-latest
+    container:
+      image: fedora:43
     permissions:
       contents: write
 
@@ -162,7 +164,7 @@ jobs:
           fi
 
       - name: Install createrepo
-        run: sudo apt-get update && sudo apt-get install -y createrepo-c
+        run: dnf install -y createrepo_c
 
       - name: Publish RPMs metadata to repo
         run: |
