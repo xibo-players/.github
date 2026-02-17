@@ -63,6 +63,10 @@ jobs:
       - name: Install rpm tools
         run: dnf install -y rpm-build rpmdevtools createrepo_c
 
+      - name: Install Node.js for pnpm-action
+        if: inputs.build-command != ''
+        run: dnf install -y nodejs
+
       - uses: pnpm/action-setup@v4
         if: inputs.build-command != ''
         with:
