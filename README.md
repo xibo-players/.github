@@ -9,11 +9,12 @@ This repository contains reusable GitHub Actions workflows that can be used acro
 ## 🔗 Quick Links
 
 - **📦 Browse Published RPMs**: https://dnf.xiboplayer.org/rpm/
+- **📦 Browse Published DEBs**: https://dnf.xiboplayer.org/deb/
 - **💿 Browse Kiosk Images**: https://dnf.xiboplayer.org/images/
 - **📖 Where Can I See the RPMs?**: [RPMS.md](RPMS.md)
 - **🔧 Repository Setup Script**: https://dnf.xiboplayer.org/scripts/setup-repo.sh
 
-### Install from RPM Repository
+### Install from RPM Repository (Fedora/RHEL)
 
 ```bash
 # Quick setup
@@ -21,6 +22,17 @@ curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash
 
 # Install packages
 sudo dnf install xiboplayer-electron
+```
+
+### Install from DEB Repository (Debian/Ubuntu)
+
+```bash
+# Add repository
+echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+sudo apt-get update
+
+# Install packages
+sudo apt-get install xiboplayer-electron
 ```
 
 ---
@@ -54,10 +66,25 @@ jobs:
       default-version: '0.2.0'
 ```
 
+**Alternative: Using RPM Spec File**
+```yaml
+jobs:
+  build-rpm:
+    uses: xibo-players/.github/.github/workflows/build-rpm.yml@main
+    with:
+      package-name: 'xiboplayer-electron'
+      build-command: 'pnpm run build:linux'
+      rpm-spec: 'xiboplayer-electron.spec'  # Provide spec file instead of script
+      rpm-output-dir: 'dist'
+      node-version: '22'
+      default-version: '0.2.0'
+```
+
 **Inputs:**
 - `package-name` (required): RPM package name
 - `build-command`: Build command before RPM (optional)
 - `rpm-script`: Path to RPM build script (default: `build-rpm.sh`)
+- `rpm-spec`: Path to RPM spec file (optional, e.g. `package.spec`). If provided, uses `rpmbuild` instead of `rpm-script`
 - `rpm-output-dir`: Directory where RPM files are output (default: `dist`)
 - `node-version`: Node.js version (default: `22`)
 - `default-version`: Default version if not tagged (default: `0.2.0`)
@@ -66,9 +93,13 @@ jobs:
 - `create-github-release`: Create GitHub Release for tags (default: `true` - only runs on tags)
 
 **Features:**
-- Installs RPM build tools
+- Uses Fedora 43 container for native RPM building
+- Installs RPM build tools (rpm-build, rpmdevtools, createrepo_c)
 - Runs optional build command with pnpm caching
-- Validates RPM script exists before running
+- **Two build approaches supported:**
+  - **Spec file approach**: Provide `.spec` file, workflow runs `rpmbuild` automatically
+  - **Script approach**: Provide custom `build-rpm.sh` script for full control
+- Validates spec file or build script exists before running
 - **Publishes to gh-pages dnf repository on every successful build** (configurable)
 - Creates GitHub releases for tags (configurable)
 - **Publishes to gh-pages dnf repository with proper structure:**
@@ -76,6 +107,7 @@ jobs:
   - `rpm/fedora/43/aarch64/` - 64-bit ARM packages  
   - `rpm/fedora/43/noarch/` - Architecture-independent packages
 - Automatically creates repository metadata with `createrepo_c`
+- All RPM operations run in Fedora container for consistency
 
 **Publishing Behavior:**
 
@@ -86,6 +118,60 @@ By default, RPMs are published to the yum/dnf repository on **every successful b
 - ✅ Manual workflow runs → RPMs published
 
 To disable automatic publishing, set `publish-to-repo: false` in your workflow call.
+
+**Build Approaches:**
+
+*Option 1: Using RPM Spec File (Recommended)*
+
+Provide a `.spec` file and let the workflow handle `rpmbuild`:
+
+```spec
+Name:           xiboplayer-electron
+Version:        0.2.0
+Release:        1%{?dist}
+Summary:        Xibo Player Electron Application
+
+License:        AGPLv3+
+URL:            https://github.com/xibo-players/xiboplayer-electron
+Source0:        %{name}-%{version}.tar.gz
+
+BuildArch:      x86_64
+Requires:       libX11, libXrandr
+
+%description
+Xibo digital signage player built with Electron.
+
+%prep
+%setup -q
+
+%install
+mkdir -p %{buildroot}/opt/xiboplayer
+cp -r dist/* %{buildroot}/opt/xiboplayer/
+
+%files
+/opt/xiboplayer/*
+
+%changelog
+* Mon Feb 17 2026 Builder <builder@example.com> - 0.2.0-1
+- Initial RPM release
+```
+
+The workflow will:
+- Setup rpmbuild directory structure
+- Copy your spec file
+- Update the version automatically
+- Create source tarball from build artifacts
+- Run `rpmbuild -bb` to build the RPM
+
+*Option 2: Using Build Script*
+
+For more control, provide a custom `build-rpm.sh` script:
+
+```bash
+#!/bin/bash
+VERSION="$1"
+# Your custom RPM build logic here
+```
 
 **Installing Published RPMs:**
 
@@ -132,7 +218,74 @@ rpm/
 
 ---
 
-### 2. Build PWA (`build-pwa.yml`)
+### 2. Build DEB (`build-deb.yml`)
+
+Builds DEB packages for Debian/Ubuntu distributions and publishes them to an apt repository on gh-pages.
+
+**Usage:**
+```yaml
+name: Build DEB
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-deb:
+    uses: xibo-players/.github/.github/workflows/build-deb.yml@main
+    with:
+      package-name: 'xiboplayer-electron'
+      build-command: 'pnpm run build:linux'
+      deb-script: 'build-deb.sh'
+      deb-output-dir: 'dist'
+      node-version: '22'
+      default-version: '0.2.0'
+```
+
+**Inputs:**
+- `package-name` (required): DEB package name
+- `build-command`: Build command before DEB (optional)
+- `deb-script`: Path to DEB build script (default: `build-deb.sh`)
+- `deb-output-dir`: Directory where DEB files are output (default: `dist`)
+- `node-version`: Node.js version (default: `22`)
+- `default-version`: Default version if not tagged (default: `0.2.0`)
+- `release-body`: Custom release body markdown (optional)
+- `publish-to-repo`: Publish to gh-pages repository (default: `true`)
+- `create-github-release`: Create GitHub Release for tags (default: `true`)
+- `ubuntu-version`: Ubuntu version number for repository structure (default: `24.04`)
+
+**Features:**
+- Uses Ubuntu container for native DEB building
+- Installs DEB build tools with dpkg-dev
+- Runs optional build command with pnpm caching
+- Validates DEB script exists before running
+- Publishes to gh-pages apt repository on every successful build (configurable)
+- Creates GitHub releases for tags (configurable)
+- Publishes to gh-pages apt repository with proper structure:
+  - `deb/ubuntu/24.04/amd64/` - 64-bit Intel/AMD packages
+  - `deb/ubuntu/24.04/arm64/` - 64-bit ARM packages  
+  - `deb/ubuntu/24.04/all/` - Architecture-independent packages
+- Automatically creates repository metadata with `dpkg-scanpackages`
+
+**Installing Published DEBs:**
+
+Once your DEBs are published, users can install them from your gh-pages repository:
+
+```bash
+# Add the repository
+echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+sudo apt-get update
+
+# Install your package
+sudo apt-get install your-package-name
+```
+
+---
+
+### 3. Build PWA (`build-pwa.yml`)
 
 Builds Progressive Web App distributions and creates tarballs.
 
@@ -171,7 +324,7 @@ jobs:
 
 ---
 
-### 3. Publish to npm (`publish-npm.yml`)
+### 4. Publish to npm (`publish-npm.yml`)
 
 Publishes packages to the npm registry.
 
@@ -207,7 +360,7 @@ jobs:
 
 ---
 
-### 4. Build ISO (`build-iso.yml`)
+### 5. Build ISO (`build-iso.yml`)
 
 Builds bootable kiosk images for Xibo players using modern mkosi tool. Supports installer ISOs, VM images (QCOW2), and raw disk images for both x86_64 and aarch64.
 
@@ -297,7 +450,7 @@ xz -dc xiboplayer-kiosk_1.0.0_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M
 
 ---
 
-### 5. Test (`test.yml`)
+### 6. Test (`test.yml`)
 
 Runs automated tests.
 
