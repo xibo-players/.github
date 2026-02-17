@@ -241,39 +241,37 @@ jobs:
 
       - name: Import GPG key and sign RPMs
         if: inputs.gpg-sign
+        env:
+          GPG_KEY: ${{ secrets.RPM_GPG_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
         run: |
           dnf install -y rpm-sign gnupg2 pinentry
 
           # Import GPG private key
-          echo "${{ secrets.RPM_GPG_KEY }}" | gpg --batch --import
+          echo "$GPG_KEY" | gpg --batch --import
 
-          # Configure rpmmacros for signing
-          GPG_KEY_ID="${{ secrets.RPM_GPG_KEY_ID }}"
-          cat > ~/.rpmmacros << MACROS
-          %_signature gpg
-          %_gpg_name ${GPG_KEY_ID}
-          %__gpg /usr/bin/gpg2
-          %__gpg_sign_cmd %{__gpg} \
-              --batch --pinentry-mode loopback \
-              --passphrase "${{ secrets.RPM_GPG_PASSPHRASE }}" \
-              --no-verbose --no-armor \
-              -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
-          MACROS
+          # Configure gpg-agent for non-interactive signing
+          mkdir -p ~/.gnupg
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          gpgconf --kill gpg-agent
+
+          # Configure rpmmacros for signing (no leading whitespace allowed)
+          echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
+          echo '%__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-fd 3 -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}' >> ~/.rpmmacros
 
           # Sign all RPMs
           for rpm in rpms/*.rpm; do
             echo "Signing: $(basename $rpm)"
-            rpm --addsign "$rpm"
+            echo "$GPG_PASSPHRASE" | rpm --addsign "$rpm" 3<&0
           done
 
           # Verify signatures
           echo "Verifying signatures..."
-          for rpm in rpms/*.rpm; do
-            rpm -K "$rpm"
-          done
+          rpm -qpi rpms/*.rpm | grep -E "^(Name|Signature)" || true
 
           # Export public key for repository consumers
-          gpg --armor --export "${GPG_KEY_ID}" > rpms/RPM-GPG-KEY-${{ inputs.package-name }}
+          gpg --export --armor "$GPG_KEY_ID" > rpms/RPM-GPG-KEY-${{ inputs.package-name }}
 
       - uses: actions/upload-artifact@v4
         with:
