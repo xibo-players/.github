@@ -7,10 +7,6 @@ on:
         required: true
         type: string
         description: 'RPM package name (e.g. xiboplayer-electron)'
-      build-method:
-        type: string
-        default: 'fedora'
-        description: 'Build environment: "fedora" (container) or "ubuntu" (apt install rpm)'
       build-command:
         type: string
         default: ''
@@ -38,18 +34,12 @@ jobs:
   build:
     name: Build ${{ inputs.package-name }} RPM
     runs-on: ubuntu-latest
-    container: ${{ inputs.build-method == 'fedora' && 'fedora:latest' || '' }}
 
     steps:
-      - name: Install build tools (Fedora)
-        if: inputs.build-method == 'fedora'
-        run: dnf install -y rpm-build rpmdevtools git systemd-rpm-macros
-
-      - name: Install build tools (Ubuntu)
-        if: inputs.build-method == 'ubuntu'
-        run: sudo apt-get update && sudo apt-get install -y rpm
-
       - uses: actions/checkout@v4
+
+      - name: Install rpm tools
+        run: sudo apt-get update && sudo apt-get install -y rpm
 
       - uses: pnpm/action-setup@v4
         if: inputs.build-command != ''
