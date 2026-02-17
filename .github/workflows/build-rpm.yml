@@ -37,6 +37,14 @@ on:
         type: boolean
         default: true
         description: 'Create GitHub Release for tags (default: true, only runs on tags)'
+      fedora-version:
+        type: string
+        default: '43'
+        description: 'Fedora version number for repository structure'
+      rpm-arch:
+        type: string
+        default: 'x86_64'
+        description: 'Architecture for RPM packages (x86_64, aarch64, noarch)'
 
 jobs:
   build:
@@ -47,7 +55,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install rpm tools
-        run: sudo apt-get update && sudo apt-get install -y rpm rpm-build createrepo-c
+        run: sudo apt-get update && sudo apt-get install -y rpm rpm-build createrepo-c systemd
 
       - uses: pnpm/action-setup@v4
         if: inputs.build-command != ''
@@ -154,30 +162,35 @@ jobs:
       - name: Install createrepo
         run: sudo apt-get update && sudo apt-get install -y createrepo-c
 
-      - name: Publish RPMs to repo
+      - name: Publish RPMs metadata to repo
         run: |
-          # Create proper repository structure
-          mkdir -p gh-pages/rpm/fedora/43/x86_64
-          mkdir -p gh-pages/rpm/fedora/43/aarch64
-          mkdir -p gh-pages/rpm/fedora/43/noarch
+          # Create proper repository structure in gh-pages
+          mkdir -p gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/x86_64
+          mkdir -p gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/aarch64
+          mkdir -p gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/noarch
           
-          # Distribute RPMs by architecture
+          # Create temporary directories for metadata generation
+          mkdir -p /tmp/rpm-repo-x86_64
+          mkdir -p /tmp/rpm-repo-aarch64
+          mkdir -p /tmp/rpm-repo-noarch
+          
+          # Distribute RPMs by architecture to temp directories for metadata generation
           for rpm in rpms/*.rpm; do
             if [ -f "$rpm" ]; then
               case "$rpm" in
                 *.x86_64.rpm)
-                  echo "Copying x86_64: $(basename $rpm)"
-                  cp "$rpm" gh-pages/rpm/fedora/43/x86_64/
+                  echo "Processing x86_64: $(basename $rpm)"
+                  cp "$rpm" /tmp/rpm-repo-x86_64/
                   ;;
                 *.aarch64.rpm)
-                  echo "Copying aarch64: $(basename $rpm)"
-                  cp "$rpm" gh-pages/rpm/fedora/43/aarch64/
+                  echo "Processing aarch64: $(basename $rpm)"
+                  cp "$rpm" /tmp/rpm-repo-aarch64/
                   ;;
                 *.noarch.rpm)
-                  echo "Copying noarch: $(basename $rpm)"
-                  cp "$rpm" gh-pages/rpm/fedora/43/x86_64/
-                  cp "$rpm" gh-pages/rpm/fedora/43/aarch64/
-                  cp "$rpm" gh-pages/rpm/fedora/43/noarch/
+                  echo "Processing noarch: $(basename $rpm)"
+                  cp "$rpm" /tmp/rpm-repo-x86_64/
+                  cp "$rpm" /tmp/rpm-repo-aarch64/
+                  cp "$rpm" /tmp/rpm-repo-noarch/
                   ;;
               esac
             fi
@@ -185,17 +198,51 @@ jobs:
           
           # Create repository metadata for each architecture
           echo "Creating repository metadata..."
-          if [ "$(ls -A gh-pages/rpm/fedora/43/x86_64/*.rpm 2>/dev/null)" ]; then
-            createrepo_c --update gh-pages/rpm/fedora/43/x86_64/
+          if [ "$(ls -A /tmp/rpm-repo-x86_64/*.rpm 2>/dev/null)" ]; then
+            createrepo_c /tmp/rpm-repo-x86_64/
+            # Copy ONLY metadata, not RPM files
+            cp -r /tmp/rpm-repo-x86_64/repodata gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/x86_64/
           fi
           
-          if [ "$(ls -A gh-pages/rpm/fedora/43/aarch64/*.rpm 2>/dev/null)" ]; then
-            createrepo_c --update gh-pages/rpm/fedora/43/aarch64/
+          if [ "$(ls -A /tmp/rpm-repo-aarch64/*.rpm 2>/dev/null)" ]; then
+            createrepo_c /tmp/rpm-repo-aarch64/
+            # Copy ONLY metadata, not RPM files
+            cp -r /tmp/rpm-repo-aarch64/repodata gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/aarch64/
           fi
           
-          if [ "$(ls -A gh-pages/rpm/fedora/43/noarch/*.rpm 2>/dev/null)" ]; then
-            createrepo_c --update gh-pages/rpm/fedora/43/noarch/
+          if [ "$(ls -A /tmp/rpm-repo-noarch/*.rpm 2>/dev/null)" ]; then
+            createrepo_c /tmp/rpm-repo-noarch/
+            # Copy ONLY metadata, not RPM files
+            cp -r /tmp/rpm-repo-noarch/repodata gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/noarch/
           fi
+          
+          echo "Repository metadata structure:"
+          ls -laR gh-pages/rpm/
+
+      - name: Create repository documentation
+        run: |
+          # Create README.md explaining the hybrid approach
+          cat > gh-pages/rpm/README.md << 'EOF'
+          # Xibo Players RPM Repository
+          
+          ## Repository Structure
+          
+          This repository uses a hybrid approach:
+          - **Metadata** (repodata): Stored in gh-pages for DNF/YUM compatibility
+          - **RPM files**: Stored as GitHub Release assets (supports large files up to 2GB)
+          
+          ## Installation
+          
+          ### For manual installation from releases:
+          ```bash
+          # Download RPM from releases
+          wget https://github.com/xibo-players/REPO-NAME/releases/download/v1.0.0/package-name.rpm
+          sudo dnf install ./package-name.rpm
+          ```
+          
+          ### For DNF repository (coming soon):
+          Repository metadata is available, but full DNF integration requires baseurl configuration to point to GitHub Releases.
+          EOF
           
           # Create index.html for easy browsing
           cat > gh-pages/rpm/index.html << 'EOF'
@@ -209,28 +256,31 @@ jobs:
               .repo-config { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
               pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
               .arch { margin: 20px 0; }
+              .warning { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 5px; margin: 20px 0; }
             </style>
           </head>
           <body>
             <h1>Xibo Players RPM Repository</h1>
             
+            <div class="warning">
+              <h2>⚠️ Important: Hybrid Repository Structure</h2>
+              <p>This repository stores <strong>metadata only</strong> in gh-pages. Large RPM files (>100MB) are stored as GitHub Release assets.</p>
+              <p>For installation, please download RPMs directly from the <a href="https://github.com/xibo-players/xiboplayer-electron/releases">Releases page</a>.</p>
+            </div>
+            
             <div class="repo-config">
-              <h2>Repository Configuration</h2>
-              <p>Add this repository to your Fedora system:</p>
-              <pre>sudo tee /etc/yum.repos.d/xibo-players.repo &lt;&lt;'REPO'
-          [xibo-players]
-          name=Xibo Players
-          baseurl=https://xibo-players.github.io/.github/rpm/fedora/$releasever/$basearch/
-          enabled=1
-          gpgcheck=0
-          REPO</pre>
-              
-              <p>Then install packages:</p>
-              <pre>sudo dnf install your-package-name</pre>
+              <h2>Manual Installation</h2>
+              <p>Download RPM files from GitHub Releases:</p>
+              <pre># Download from releases
+          wget https://github.com/xibo-players/REPO-NAME/releases/download/v1.0.0/package-name.rpm
+          
+          # Install locally
+          sudo dnf install ./package-name.rpm</pre>
             </div>
             
             <div class="arch">
-              <h2>Available Architectures</h2>
+              <h2>Repository Metadata</h2>
+              <p>Repository metadata is available for the following architectures:</p>
               <ul>
                 <li><a href="fedora/43/x86_64/">x86_64 (64-bit Intel/AMD)</a></li>
                 <li><a href="fedora/43/aarch64/">aarch64 (64-bit ARM)</a></li>
@@ -243,9 +293,6 @@ jobs:
           </body>
           </html>
           EOF
-          
-          echo "Repository structure:"
-          ls -laR gh-pages/rpm/
 
       - name: Push to gh-pages
         run: |
