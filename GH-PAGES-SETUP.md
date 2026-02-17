@@ -8,45 +8,20 @@ The URLs documented in this repository (like https://dnf.xiboplayer.org/rpm/) re
 
 The `gh-pages` branch needs to be initialized with the proper structure. This can be done in two ways:
 
-### Option 1: Manual Initialization (Recommended for First Time)
+### Option 1: Use the Automated Workflow (Recommended)
 
-A repository administrator should run:
+Run the `publish-gh-pages.yml` workflow to automatically create the gh-pages branch with the proper structure:
 
-```bash
-git checkout --orphan gh-pages
-git rm -rf .
-git clean -fd
+1. Go to the repository's Actions tab
+2. Select the "Publish gh-pages" workflow
+3. Click "Run workflow"
+4. The workflow will create the gh-pages branch with all necessary structure and index pages
 
-# Create directory structure
-mkdir -p rpm/fedora/43/{x86_64,aarch64,noarch}
-mkdir -p deb/ubuntu/24.04/{amd64,arm64,all}
-mkdir -p images
-mkdir -p scripts
+This is the easiest and most reliable method.
 
-# Add the index files and script (see gh-pages-content/ directory)
-# Copy files from our prepared structure
+### Option 2: Let Build Workflows Create It
 
-git add -A
-git commit -m "Initial gh-pages setup"
-git push -u origin gh-pages
-```
-
-### Option 2: Let Workflows Create It
-
-The workflows will automatically initialize gh-pages on the first successful build that triggers publishing. However, the index pages won't exist until then.
-
-## Prepared Content
-
-The gh-pages content has been prepared in this branch and committed locally. A repository administrator with push permissions needs to:
-
-1. Check out the `gh-pages` branch from this repository
-2. Push it to origin
-
-Alternatively, the content can be recreated using the script:
-
-```bash
-./scripts/init-gh-pages.sh
-```
+The build workflows (build-rpm.yml, build-deb.yml, build-iso.yml) will automatically initialize gh-pages on the first successful build that triggers publishing. However, the index pages may need to be created separately.
 
 ## Enabling GitHub Pages
 
