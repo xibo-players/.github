@@ -140,8 +140,15 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           RELEASE="${{ steps.release.outputs.release }}"
 
-          # Check if spec file is provided
-          if [ -n "${{ inputs.rpm-spec }}" ] && [ -f "${{ inputs.rpm-spec }}" ]; then
+          # Priority: script > spec > error
+          # When both rpm-script and rpm-spec are provided, the script builds
+          # and the spec is only used for dnf builddep (handled in earlier step)
+          if [ -f "${{ inputs.rpm-script }}" ]; then
+            echo "Building RPM using script: ${{ inputs.rpm-script }}"
+            chmod +x ${{ inputs.rpm-script }}
+            ./${{ inputs.rpm-script }} "${VERSION}"
+
+          elif [ -n "${{ inputs.rpm-spec }}" ] && [ -f "${{ inputs.rpm-spec }}" ]; then
             echo "Building RPM from spec file: ${{ inputs.rpm-spec }}"
 
             # Setup rpmbuild directory structure
@@ -193,14 +200,8 @@ jobs:
 
             echo "RPM build completed from spec file"
 
-          # Fall back to build script (backward compatible)
-          elif [ -f "${{ inputs.rpm-script }}" ]; then
-            echo "Building RPM using script: ${{ inputs.rpm-script }}"
-            chmod +x ${{ inputs.rpm-script }}
-            ./${{ inputs.rpm-script }} "${VERSION}"
-
           else
-            echo "Error: Neither RPM spec file (${{ inputs.rpm-spec }}) nor RPM script (${{ inputs.rpm-script }}) found"
+            echo "Error: Neither RPM script (${{ inputs.rpm-script }}) nor RPM spec file (${{ inputs.rpm-spec }}) found"
             exit 1
           fi
 
