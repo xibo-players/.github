@@ -1,0 +1,73 @@
+name: Build PWA (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '22'
+      pnpm-version:
+        type: string
+        default: '10'
+      build-command:
+        type: string
+        default: 'pnpm run build'
+      artifact-name:
+        type: string
+        default: 'pwa-dist'
+      tarball-name:
+        type: string
+        default: 'xiboplayer-pwa-dist.tar.gz'
+      release-name:
+        type: string
+        default: 'PWA Player'
+
+jobs:
+  build:
+    name: Build PWA dist
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm-version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: ${{ inputs.build-command }}
+
+      - name: Create tarball
+        run: tar -czf ${{ inputs.tarball-name }} -C dist .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.tarball-name }}
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: "${{ inputs.release-name }} ${{ github.ref_name }}"
+          files: ${{ inputs.tarball-name }}
+          draft: false
+          prerelease: false
