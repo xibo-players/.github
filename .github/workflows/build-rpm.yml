@@ -34,24 +34,24 @@ jobs:
   build:
     name: Build ${{ inputs.package-name }} RPM
     runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
 
     steps:
+      - name: Install build tools
+        run: dnf install -y rpm-build rpmdevtools git systemd-rpm-macros
+
       - uses: actions/checkout@v4
 
-      - name: Install rpm tools
-        run: sudo apt-get update && sudo apt-get install -y rpm
-
-      - uses: pnpm/action-setup@v4
+      - name: Install Node.js and pnpm
         if: inputs.build-command != ''
-
-      - uses: actions/setup-node@v4
-        if: inputs.build-command != ''
-        with:
-          node-version: ${{ inputs.node-version }}
+        run: |
+          dnf install -y nodejs npm
+          npm install -g pnpm@10
 
       - name: Install dependencies
         if: inputs.build-command != ''
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build application
         if: inputs.build-command != ''
