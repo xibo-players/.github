@@ -160,40 +160,16 @@ jobs:
       - name: List downloaded DEBs
         run: ls -lh debs/
 
-      - name: Import GPG key and sign DEBs
+      - name: Export GPG public key
         if: inputs.gpg-sign
         env:
           GPG_KEY: ${{ secrets.DEB_GPG_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.DEB_GPG_PASSPHRASE }}
         run: |
-          sudo add-apt-repository -y universe
-          sudo apt-get update && sudo apt-get install -y dpkg-sig gnupg2
-
-          # Import GPG private key
+          # Import GPG key to export public part
           echo "$GPG_KEY" | gpg --batch --import
 
-          # Configure gpg-agent for non-interactive signing
-          mkdir -p ~/.gnupg
-          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-          gpgconf --kill gpg-agent
-
-          # Get GPG key ID
-          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | awk '{print $2}' | cut -d'/' -f2)
-          echo "Using GPG Key ID: $GPG_KEY_ID"
-
-          # Sign all DEBs
-          for deb in debs/*.deb; do
-            echo "Signing: $(basename $deb)"
-            echo "$GPG_PASSPHRASE" | dpkg-sig --sign builder -k "$GPG_KEY_ID" \
-              --gpg-options "--batch --no-tty --pinentry-mode loopback --passphrase-fd 0" \
-              "$deb"
-          done
-
-          # Verify signatures
-          echo "Verifying signatures..."
-          dpkg-sig --verify debs/*.deb || true
-
           # Export public key for repository consumers
+          # (APT repo signing is done in publish-deb via Release.gpg/InRelease)
           gpg --armor --export > debs/DEB-GPG-KEY-${{ inputs.package-name }}.asc
 
       - uses: actions/upload-artifact@v4
