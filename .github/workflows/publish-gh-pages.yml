@@ -1,0 +1,186 @@
+name: Publish GitHub Pages
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force publish even if gh-pages exists'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  publish-gh-pages:
+    name: Publish gh-pages
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      
+      - name: Check if gh-pages exists
+        id: check
+        run: |
+          if git ls-remote --heads origin gh-pages | grep gh-pages; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            if [ "${{ github.event.inputs.force }}" != "true" ]; then
+              echo "⚠️ gh-pages branch already exists. Use force=true to overwrite."
+              exit 1
+            fi
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Initialize gh-pages content
+        run: |
+          mkdir -p gh-pages-deploy/rpm/fedora/43/{x86_64,aarch64,noarch}
+          mkdir -p gh-pages-deploy/images
+          mkdir -p gh-pages-deploy/scripts
+          
+          # Copy setup script
+          cp scripts/setup-repo.sh gh-pages-deploy/scripts/
+          
+          # Create root index
+          cat > gh-pages-deploy/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Xibo Players - Shared Resources</title>
+              <style>
+                  body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                      max-width: 1200px;
+                      margin: 0 auto;
+                      padding: 40px 20px;
+                      line-height: 1.6;
+                      color: #333;
+                  }
+                  h1 { color: #0066cc; border-bottom: 3px solid #0066cc; padding-bottom: 10px; }
+                  .card {
+                      background: #f8f9fa;
+                      border-left: 4px solid #0066cc;
+                      padding: 20px;
+                      margin: 20px 0;
+                      border-radius: 4px;
+                  }
+                  a { color: #0066cc; text-decoration: none; }
+                  a:hover { text-decoration: underline; }
+                  pre {
+                      background: #272822;
+                      color: #f8f8f2;
+                      padding: 15px;
+                      border-radius: 5px;
+                      overflow-x: auto;
+                  }
+              </style>
+          </head>
+          <body>
+              <h1>🎯 Xibo Players - Shared Resources</h1>
+              
+              <p>Welcome! This page provides access to RPM packages, kiosk images, and installation scripts.</p>
+
+              <div class="card">
+                  <h3>📦 RPM Repository</h3>
+                  <p><a href="rpm/">Browse RPM packages →</a></p>
+                  <pre>curl -fsSL https://xibo-players.github.io/.github/scripts/setup-repo.sh | sudo bash</pre>
+              </div>
+
+              <div class="card">
+                  <h3>💿 Kiosk Images</h3>
+                  <p><a href="images/">Browse bootable images →</a></p>
+              </div>
+
+              <div class="card">
+                  <h3>📚 Documentation</h3>
+                  <p><a href="https://github.com/xibo-players/.github">GitHub Repository</a></p>
+              </div>
+          </body>
+          </html>
+          EOF
+          
+          # Create rpm/index.html
+          cat > gh-pages-deploy/rpm/index.html << 'RPMEOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <title>Xibo Players - RPM Repository</title>
+              <style>
+                  body { font-family: sans-serif; max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+                  h1 { color: #0066cc; }
+                  pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; }
+                  a { color: #0066cc; }
+              </style>
+          </head>
+          <body>
+              <h1>📦 RPM Repository</h1>
+              <p>Architectures: <a href="fedora/43/x86_64/">x86_64</a> | <a href="fedora/43/aarch64/">aarch64</a> | <a href="fedora/43/noarch/">noarch</a></p>
+              <h2>Installation</h2>
+              <pre>curl -fsSL https://xibo-players.github.io/.github/scripts/setup-repo.sh | sudo bash
+          sudo dnf install xiboplayer-electron</pre>
+              <p><a href="../">← Back</a></p>
+          </body>
+          </html>
+          RPMEOF
+          
+          # Create images/index.html
+          cat > gh-pages-deploy/images/index.html << 'IMGEOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <title>Xibo Players - Kiosk Images</title>
+              <style>
+                  body { font-family: sans-serif; max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+                  h1 { color: #0066cc; }
+                  a { color: #0066cc; }
+              </style>
+          </head>
+          <body>
+              <h1>💿 Kiosk Images</h1>
+              <p>Bootable kiosk images will appear here after workflows run.</p>
+              <p><a href="../">← Back</a></p>
+          </body>
+          </html>
+          IMGEOF
+          
+          # Create .gitkeep files
+          touch gh-pages-deploy/rpm/fedora/43/x86_64/.gitkeep
+          touch gh-pages-deploy/rpm/fedora/43/aarch64/.gitkeep
+          touch gh-pages-deploy/rpm/fedora/43/noarch/.gitkeep
+          
+          echo "✓ gh-pages content created"
+      
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh-pages-deploy
+          force_orphan: true
+          commit_message: "Publish GitHub Pages"
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+      
+      - name: Summary
+        run: |
+          echo "## ✅ GitHub Pages Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The gh-pages branch has been created and published." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### URLs Available:" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 https://xibo-players.github.io/.github/rpm/" >> $GITHUB_STEP_SUMMARY
+          echo "- 💿 https://xibo-players.github.io/.github/images/" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔧 https://xibo-players.github.io/.github/scripts/setup-repo.sh" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to repository Settings → Pages" >> $GITHUB_STEP_SUMMARY
+          echo "2. Ensure Source is set to 'gh-pages' branch" >> $GITHUB_STEP_SUMMARY
+          echo "3. Wait a few minutes for deployment" >> $GITHUB_STEP_SUMMARY
