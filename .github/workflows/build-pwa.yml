@@ -6,9 +6,6 @@ on:
       node-version:
         type: string
         default: '22'
-      pnpm-version:
-        type: string
-        default: '10'
       build-command:
         type: string
         default: 'pnpm run build'
@@ -31,8 +28,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ inputs.pnpm-version }}
 
       - uses: actions/setup-node@v4
         with:
