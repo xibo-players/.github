@@ -45,23 +45,50 @@ on:
         type: string
         default: '43'
         description: 'Fedora version number for repository structure'
-      rpm-arch:
+      arch-matrix:
         type: string
-        default: 'x86_64'
-        description: 'Architecture for RPM packages (x86_64, aarch64, noarch)'
+        default: '["x86_64"]'
+        description: 'JSON array of architectures to build (e.g. ["x86_64","aarch64"])'
+      source-tarball:
+        type: string
+        default: 'auto'
+        description: 'Source tarball mode: auto (detect dist/build/target), full (entire repo), none (skip)'
+      gpg-sign:
+        type: boolean
+        default: false
+        description: 'Enable GPG signing of RPM packages'
+    secrets:
+      RPM_GPG_KEY:
+        required: false
+        description: 'ASCII-armored GPG private key for RPM signing'
+      RPM_GPG_PASSPHRASE:
+        required: false
+        description: 'Passphrase for the GPG key'
+      RPM_GPG_KEY_ID:
+        required: false
+        description: 'GPG key ID for signing (e.g. name or email)'
 
 jobs:
   build:
-    name: Build ${{ inputs.package-name }} RPM
-    runs-on: ubuntu-latest
+    name: Build RPM (${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     container:
-      image: fedora:43
+      image: fedora:${{ inputs.fedora-version || '43' }}
+    strategy:
+      matrix:
+        arch: ${{ fromJSON(inputs.arch-matrix) }}
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install rpm tools
-        run: dnf install -y rpm-build rpmdevtools createrepo_c
+        run: dnf install -y rpm-build rpmdevtools createrepo_c git tar gzip
+
+      - name: Install build dependencies from spec
+        if: inputs.rpm-spec != ''
+        run: |
+          dnf install -y 'dnf-command(builddep)'
+          dnf builddep -y ${{ inputs.rpm-spec }}
 
       - name: Install Node.js for pnpm-action
         if: inputs.build-command != ''
@@ -98,63 +125,87 @@ jobs:
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Determine release number
+        id: release
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "release=1" >> "$GITHUB_OUTPUT"
+          else
+            # Use short SHA for non-tag builds
+            SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
+            echo "release=0.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build RPM
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          
+          RELEASE="${{ steps.release.outputs.release }}"
+
           # Check if spec file is provided
           if [ -n "${{ inputs.rpm-spec }}" ] && [ -f "${{ inputs.rpm-spec }}" ]; then
             echo "Building RPM from spec file: ${{ inputs.rpm-spec }}"
-            
+
             # Setup rpmbuild directory structure
             rpmdev-setuptree
-            
+
             # Copy spec file to SPECS directory
             cp "${{ inputs.rpm-spec }}" ~/rpmbuild/SPECS/
             SPEC_FILE=~/rpmbuild/SPECS/$(basename "${{ inputs.rpm-spec }}")
-            
-            # Replace version in spec file
+
+            # Replace version and release in spec file
             sed -i "s/^Version:.*/Version: ${VERSION}/" "$SPEC_FILE"
-            
-            # Copy source files if they exist
-            if [ -d "dist" ]; then
-              echo "Copying dist/ directory to SOURCES..."
-              PACKAGE_NAME="${{ inputs.package-name }}"
-              tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz dist/
-            elif [ -d "build" ]; then
-              echo "Copying build/ directory to SOURCES..."
-              PACKAGE_NAME="${{ inputs.package-name }}"
-              tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz build/
-            elif [ -d "target" ]; then
-              echo "Copying target/ directory to SOURCES..."
-              PACKAGE_NAME="${{ inputs.package-name }}"
-              tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz target/
-            else
-              echo "Warning: No dist/, build/, or target/ directory found for source tarball"
-              echo "If your spec file requires Source0, the build may fail"
-            fi
-            
+            sed -i "s/^Release:.*/Release: ${RELEASE}%{?dist}/" "$SPEC_FILE"
+
+            # Create source tarball based on mode
+            PACKAGE_NAME="${{ inputs.package-name }}"
+            case "${{ inputs.source-tarball }}" in
+              full)
+                echo "Creating full-source tarball (entire repo)..."
+                tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz \
+                  --transform "s,^\.,${PACKAGE_NAME}-${VERSION}," \
+                  --exclude='.git' .
+                ;;
+              none)
+                echo "Skipping source tarball creation"
+                ;;
+              auto|*)
+                if [ -d "dist" ]; then
+                  echo "Copying dist/ directory to SOURCES..."
+                  tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz dist/
+                elif [ -d "build" ]; then
+                  echo "Copying build/ directory to SOURCES..."
+                  tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz build/
+                elif [ -d "target" ]; then
+                  echo "Copying target/ directory to SOURCES..."
+                  tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz target/
+                else
+                  echo "Warning: No dist/, build/, or target/ directory found for source tarball"
+                  echo "If your spec file requires Source0, the build may fail"
+                fi
+                ;;
+            esac
+
             # Build the RPM
             rpmbuild -bb "$SPEC_FILE"
-            
+
             # Copy built RPMs to output directory
             mkdir -p ${{ inputs.rpm-output-dir }}
             find ~/rpmbuild/RPMS/ -name "*.rpm" -exec cp {} ${{ inputs.rpm-output-dir }}/ \;
-            
+
             echo "RPM build completed from spec file"
-            
+
           # Fall back to build script (backward compatible)
           elif [ -f "${{ inputs.rpm-script }}" ]; then
             echo "Building RPM using script: ${{ inputs.rpm-script }}"
             chmod +x ${{ inputs.rpm-script }}
             ./${{ inputs.rpm-script }} "${VERSION}"
-            
+
           else
             echo "Error: Neither RPM spec file (${{ inputs.rpm-spec }}) nor RPM script (${{ inputs.rpm-script }}) found"
             exit 1
           fi
-          
+
           # Verify RPMs were created
           shopt -s nullglob
           rpm_files=(${{ inputs.rpm-output-dir }}/*.rpm)
@@ -162,52 +213,116 @@ jobs:
             echo "Error: No RPM files found in ${{ inputs.rpm-output-dir }}"
             exit 1
           fi
-          
+
           echo "Built RPMs:"
           ls -lh ${{ inputs.rpm-output-dir }}/*.rpm
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.package-name }}-rpm
+          name: ${{ inputs.package-name }}-rpm-${{ matrix.arch }}
           path: ${{ inputs.rpm-output-dir }}/*.rpm
+          retention-days: 30
+
+  sign:
+    name: Sign RPMs
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:${{ inputs.fedora-version || '43' }}
+
+    steps:
+      - name: Download all RPM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.package-name }}-rpm-*
+          merge-multiple: true
+          path: rpms/
+
+      - name: List downloaded RPMs
+        run: ls -lh rpms/
+
+      - name: Import GPG key and sign RPMs
+        if: inputs.gpg-sign
+        run: |
+          dnf install -y rpm-sign gnupg2 pinentry
+
+          # Import GPG private key
+          echo "${{ secrets.RPM_GPG_KEY }}" | gpg --batch --import
+
+          # Configure rpmmacros for signing
+          GPG_KEY_ID="${{ secrets.RPM_GPG_KEY_ID }}"
+          cat > ~/.rpmmacros << MACROS
+          %_signature gpg
+          %_gpg_name ${GPG_KEY_ID}
+          %__gpg /usr/bin/gpg2
+          %__gpg_sign_cmd %{__gpg} \
+              --batch --pinentry-mode loopback \
+              --passphrase "${{ secrets.RPM_GPG_PASSPHRASE }}" \
+              --no-verbose --no-armor \
+              -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
+          MACROS
+
+          # Sign all RPMs
+          for rpm in rpms/*.rpm; do
+            echo "Signing: $(basename $rpm)"
+            rpm --addsign "$rpm"
+          done
+
+          # Verify signatures
+          echo "Verifying signatures..."
+          for rpm in rpms/*.rpm; do
+            rpm -K "$rpm"
+          done
+
+          # Export public key for repository consumers
+          gpg --armor --export "${GPG_KEY_ID}" > rpms/RPM-GPG-KEY-${{ inputs.package-name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-rpm-signed
+          path: rpms/
           retention-days: 30
 
   release:
     name: Create GitHub Release
-    needs: build
+    needs: sign
     if: inputs.create-github-release && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    container:
+      image: fedora:${{ inputs.fedora-version || '43' }}
     permissions:
       contents: write
 
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.package-name }}-rpm
+          name: ${{ inputs.package-name }}-rpm-signed
           path: dist/
 
       - uses: softprops/action-gh-release@v2
         with:
           name: "${{ inputs.package-name }} ${{ github.ref_name }}"
           body: ${{ inputs.release-body || format('## {0}\n\n### Installation\n```bash\nsudo dnf install ./{0}-*.rpm\n```', inputs.package-name) }}
-          files: dist/*.rpm
+          files: |
+            dist/*.rpm
+            dist/RPM-GPG-KEY-*
           draft: false
           prerelease: false
 
   publish-rpm:
     name: Publish to gh-pages dnf repo
-    needs: build
+    needs: sign
     if: inputs.publish-to-repo
     runs-on: ubuntu-latest
     container:
-      image: fedora:43
+      image: fedora:${{ inputs.fedora-version || '43' }}
     permissions:
       contents: write
 
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.package-name }}-rpm
+          name: ${{ inputs.package-name }}-rpm-signed
           path: rpms/
 
       - name: Checkout gh-pages branch
@@ -235,30 +350,28 @@ jobs:
       - name: Publish RPMs metadata to repo
         run: |
           # Determine the release tag/version for baseurl
-          # For tagged builds, use the specific tag (e.g., v0.2.0)
-          # For non-tagged builds, use "latest" which GitHub automatically redirects to the most recent release
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             RELEASE_TAG="${{ github.ref_name }}"
           else
             RELEASE_TAG="latest"
           fi
-          
-          # Baseurl points to release root where RPMs are stored flat (not in architecture subdirectories)
-          # RPM filenames include architecture suffix (e.g., package-0.2.0-1.fc43.x86_64.rpm)
+
           BASEURL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}"
           echo "Using baseurl: ${BASEURL}"
-          
+
+          FEDORA_VER="${{ inputs.fedora-version || '43' }}"
+
           # Create proper repository structure in gh-pages
-          mkdir -p gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/x86_64
-          mkdir -p gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/aarch64
-          mkdir -p gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/noarch
-          
+          mkdir -p gh-pages/rpm/fedora/${FEDORA_VER}/x86_64
+          mkdir -p gh-pages/rpm/fedora/${FEDORA_VER}/aarch64
+          mkdir -p gh-pages/rpm/fedora/${FEDORA_VER}/noarch
+
           # Create temporary directories for metadata generation
           mkdir -p /tmp/rpm-repo-x86_64
           mkdir -p /tmp/rpm-repo-aarch64
           mkdir -p /tmp/rpm-repo-noarch
-          
-          # Distribute RPMs by architecture to temp directories for metadata generation
+
+          # Distribute RPMs by architecture to temp directories
           for rpm in rpms/*.rpm; do
             if [ -f "$rpm" ]; then
               case "$rpm" in
@@ -279,139 +392,31 @@ jobs:
               esac
             fi
           done
-          
+
+          # Copy GPG public key to gh-pages if it exists
+          if [ -f "rpms/RPM-GPG-KEY-${{ inputs.package-name }}" ]; then
+            cp "rpms/RPM-GPG-KEY-${{ inputs.package-name }}" gh-pages/rpm/
+          fi
+
           # Create repository metadata with baseurl pointing to GitHub Releases
           echo "Creating repository metadata..."
           if [ "$(ls -A /tmp/rpm-repo-x86_64/*.rpm 2>/dev/null)" ]; then
             createrepo_c --baseurl "${BASEURL}" /tmp/rpm-repo-x86_64/
-            # Copy ONLY metadata, not RPM files (they stay in GitHub Releases)
-            cp -r /tmp/rpm-repo-x86_64/repodata gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/x86_64/
+            cp -r /tmp/rpm-repo-x86_64/repodata gh-pages/rpm/fedora/${FEDORA_VER}/x86_64/
           fi
-          
+
           if [ "$(ls -A /tmp/rpm-repo-aarch64/*.rpm 2>/dev/null)" ]; then
             createrepo_c --baseurl "${BASEURL}" /tmp/rpm-repo-aarch64/
-            # Copy ONLY metadata, not RPM files
-            cp -r /tmp/rpm-repo-aarch64/repodata gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/aarch64/
+            cp -r /tmp/rpm-repo-aarch64/repodata gh-pages/rpm/fedora/${FEDORA_VER}/aarch64/
           fi
-          
+
           if [ "$(ls -A /tmp/rpm-repo-noarch/*.rpm 2>/dev/null)" ]; then
             createrepo_c --baseurl "${BASEURL}" /tmp/rpm-repo-noarch/
-            # Copy ONLY metadata, not RPM files
-            cp -r /tmp/rpm-repo-noarch/repodata gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/noarch/
+            cp -r /tmp/rpm-repo-noarch/repodata gh-pages/rpm/fedora/${FEDORA_VER}/noarch/
           fi
-          
-          echo "Repository metadata structure:"
-          ls -laR gh-pages/rpm/
 
-      - name: Create repository documentation
-        run: |
-          # Create README.md explaining the hybrid approach
-          cat > gh-pages/rpm/README.md << 'EOF'
-          # Xibo Players RPM Repository
-          
-          ## Repository Structure
-          
-          This repository uses a hybrid approach:
-          - **Metadata** (repodata): Stored in gh-pages (fast, lightweight)
-          - **RPM files**: Stored as GitHub Release assets (supports large files up to 2GB)
-          - **DNF/YUM**: Automatically downloads RPMs from Releases using metadata
-          
-          ## Installation
-          
-          ### Add the repository:
-          ```bash
-          cat > /etc/yum.repos.d/xibo-players.repo << 'REPO'
-          [xibo-players]
-          name=Xibo Players
-          baseurl=https://dnf.xiboplayer.org/rpm/fedora/${{ inputs.fedora-version || '43' }}/$basearch
-          enabled=1
-          gpgcheck=0
-          REPO
-          ```
-          
-          ### Install packages:
-          ```bash
-          sudo dnf install ${{ inputs.package-name }}
-          ```
-          
-          DNF will read metadata from gh-pages but download RPMs from GitHub Releases automatically.
-          
-          ### Manual installation from releases:
-          ```bash
-          # Download RPM from releases (replace v0.2.0 with actual release tag)
-          wget https://github.com/${{ github.repository }}/releases/download/v0.2.0/${{ inputs.package-name }}.rpm
-          sudo dnf install ./${{ inputs.package-name }}.rpm
-          ```
-          EOF
-          
-          # Create index.html for easy browsing
-          cat > gh-pages/rpm/index.html << 'EOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Xibo Players RPM Repository</title>
-            <style>
-              body { font-family: Arial, sans-serif; margin: 40px; }
-              h1 { color: #333; }
-              .repo-config { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
-              pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
-              .arch { margin: 20px 0; }
-              .info { background: #d1ecf1; border: 1px solid #17a2b8; padding: 15px; border-radius: 5px; margin: 20px 0; }
-            </style>
-          </head>
-          <body>
-            <h1>Xibo Players RPM Repository</h1>
-            
-            <div class="info">
-              <h2>✅ Hybrid Repository Structure</h2>
-              <p>This repository uses a hybrid approach for optimal performance:</p>
-              <ul>
-                <li><strong>Metadata (repodata)</strong>: Stored in gh-pages (fast, lightweight ~100KB)</li>
-                <li><strong>RPM files</strong>: Stored as GitHub Release assets (supports large files up to 2GB)</li>
-                <li><strong>DNF/YUM</strong>: Automatically downloads RPMs from Releases using the metadata</li>
-              </ul>
-            </div>
-            
-            <div class="repo-config">
-              <h2>DNF Installation (Recommended)</h2>
-              <p>Add the repository to your system:</p>
-              <pre>cat > /etc/yum.repos.d/xibo-players.repo &lt;&lt; 'REPO'
-          [xibo-players]
-          name=Xibo Players
-          baseurl=https://dnf.xiboplayer.org/rpm/fedora/${{ inputs.fedora-version || '43' }}/$basearch
-          enabled=1
-          gpgcheck=0
-          REPO</pre>
-              <p>Then install packages:</p>
-              <pre>sudo dnf install ${{ inputs.package-name }}</pre>
-              <p>DNF will automatically download RPMs from GitHub Releases.</p>
-            </div>
-            
-            <div class="repo-config">
-              <h2>Manual Installation</h2>
-              <p>Download RPM files from GitHub Releases:</p>
-              <pre># Download from releases (replace v0.2.0 with actual release tag)
-          wget https://github.com/${{ github.repository }}/releases/download/v0.2.0/${{ inputs.package-name }}.rpm
-          
-          # Install locally
-          sudo dnf install ./${{ inputs.package-name }}.rpm</pre>
-            </div>
-            
-            <div class="arch">
-              <h2>Repository Metadata</h2>
-              <p>Repository metadata is available for the following architectures:</p>
-              <ul>
-                <li><a href="fedora/${{ inputs.fedora-version || '43' }}/x86_64/">x86_64 (64-bit Intel/AMD)</a></li>
-                <li><a href="fedora/${{ inputs.fedora-version || '43' }}/aarch64/">aarch64 (64-bit ARM)</a></li>
-                <li><a href="fedora/${{ inputs.fedora-version || '43' }}/noarch/">noarch (Architecture independent)</a></li>
-              </ul>
-            </div>
-            
-            <hr>
-            <p><small>Last updated: $(date -u)</small></p>
-          </body>
-          </html>
-          EOF
+          echo "Repository metadata structure:"
+          find gh-pages/rpm/ -type f | head -50
 
       - name: Push to gh-pages
         run: |
@@ -419,18 +424,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          
+
           # Check if there are changes
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
           fi
-          
+
           git commit -m "Update RPM repository - ${{ inputs.package-name }}"
-          
+
           # Pull with rebase to handle concurrent pushes
           git pull --rebase "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages || true
-          
+
           # Push changes
           git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
         env:

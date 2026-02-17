@@ -41,13 +41,35 @@ on:
         type: string
         default: '24.04'
         description: 'Ubuntu version for repository structure'
+      arch-matrix:
+        type: string
+        default: '["amd64"]'
+        description: 'JSON array of architectures to build (e.g. ["amd64","arm64"])'
+      gpg-sign:
+        type: boolean
+        default: false
+        description: 'Enable GPG signing of DEB packages'
+      extra-build-deps:
+        type: string
+        default: ''
+        description: 'Extra apt packages to install before build (e.g. cargo cmake libdbus-1-dev)'
+    secrets:
+      DEB_GPG_KEY:
+        required: false
+        description: 'ASCII-armored GPG private key for DEB signing'
+      DEB_GPG_PASSPHRASE:
+        required: false
+        description: 'Passphrase for the GPG key'
 
 jobs:
   build:
-    name: Build ${{ inputs.package-name }} DEB
-    runs-on: ubuntu-latest
+    name: Build DEB (${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     container:
-      image: ubuntu:24.04
+      image: ubuntu:${{ inputs.ubuntu-version || '24.04' }}
+    strategy:
+      matrix:
+        arch: ${{ fromJSON(inputs.arch-matrix) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -55,11 +77,15 @@ jobs:
       - name: Install deb tools
         run: |
           apt-get update
-          apt-get install -y dpkg-dev debhelper build-essential curl
+          apt-get install -y dpkg-dev debhelper build-essential curl git
+
+      - name: Install extra build dependencies
+        if: inputs.extra-build-deps != ''
+        run: apt-get install -y ${{ inputs.extra-build-deps }}
 
       - name: Install Node.js for pnpm-action
         if: inputs.build-command != ''
-        run: apt-get install -y nodejs
+        run: apt-get install -y nodejs npm
 
       - uses: pnpm/action-setup@v4
         if: inputs.build-command != ''
@@ -102,15 +128,73 @@ jobs:
             exit 1
           fi
 
+          # Verify DEBs were created
+          shopt -s nullglob
+          deb_files=(${{ inputs.deb-output-dir }}/*.deb)
+          if [ ${#deb_files[@]} -eq 0 ]; then
+            echo "Error: No DEB files found in ${{ inputs.deb-output-dir }}"
+            exit 1
+          fi
+
+          echo "Built DEBs:"
+          ls -lh ${{ inputs.deb-output-dir }}/*.deb
+
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.package-name }}-deb
+          name: ${{ inputs.package-name }}-deb-${{ matrix.arch }}
           path: ${{ inputs.deb-output-dir }}/*.deb
+          retention-days: 30
+
+  sign:
+    name: Sign DEBs
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all DEB artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ${{ inputs.package-name }}-deb-*
+          merge-multiple: true
+          path: debs/
+
+      - name: List downloaded DEBs
+        run: ls -lh debs/
+
+      - name: Import GPG key and sign DEBs
+        if: inputs.gpg-sign
+        run: |
+          sudo apt-get update && sudo apt-get install -y dpkg-sig gnupg2
+
+          # Import GPG private key
+          echo "${{ secrets.DEB_GPG_KEY }}" | gpg --batch --import
+
+          # Sign all DEBs
+          for deb in debs/*.deb; do
+            echo "Signing: $(basename $deb)"
+            dpkg-sig --sign builder \
+              --gpg-options "--batch --pinentry-mode loopback --passphrase ${{ secrets.DEB_GPG_PASSPHRASE }}" \
+              "$deb"
+          done
+
+          # Verify signatures
+          echo "Verifying signatures..."
+          for deb in debs/*.deb; do
+            dpkg-sig --verify "$deb"
+          done
+
+          # Export public key for repository consumers
+          gpg --armor --export > debs/DEB-GPG-KEY-${{ inputs.package-name }}.asc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-deb-signed
+          path: debs/
           retention-days: 30
 
   release:
     name: Create GitHub Release
-    needs: build
+    needs: sign
     if: inputs.create-github-release && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -119,20 +203,22 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.package-name }}-deb
+          name: ${{ inputs.package-name }}-deb-signed
           path: dist/
 
       - uses: softprops/action-gh-release@v2
         with:
           name: "${{ inputs.package-name }} ${{ github.ref_name }}"
           body: ${{ inputs.release-body || format('## {0}\n\n### Installation\n```bash\nsudo dpkg -i {0}_*.deb\nsudo apt-get install -f\n```', inputs.package-name) }}
-          files: dist/*.deb
+          files: |
+            dist/*.deb
+            dist/DEB-GPG-KEY-*
           draft: false
           prerelease: false
 
   publish-deb:
     name: Publish to gh-pages apt repo
-    needs: build
+    needs: sign
     if: inputs.publish-to-repo
     runs-on: ubuntu-latest
     permissions:
@@ -141,7 +227,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.package-name }}-deb
+          name: ${{ inputs.package-name }}-deb-signed
           path: debs/
 
       - name: Checkout gh-pages branch
@@ -164,21 +250,24 @@ jobs:
           fi
 
       - name: Install apt repository tools
-        run: sudo apt-get update && sudo apt-get install -y dpkg-dev
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev gnupg2
 
       - name: Publish DEBs metadata to repo
         run: |
+          UBUNTU_VER="${{ inputs.ubuntu-version || '24.04' }}"
+          REPO_BASE="gh-pages/deb/ubuntu/${UBUNTU_VER}"
+
           # Create proper repository structure in gh-pages
-          mkdir -p gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/amd64
-          mkdir -p gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/arm64
-          mkdir -p gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/all
-          
+          mkdir -p "${REPO_BASE}/amd64"
+          mkdir -p "${REPO_BASE}/arm64"
+          mkdir -p "${REPO_BASE}/all"
+
           # Create temporary directories for metadata generation
           mkdir -p /tmp/deb-repo-amd64
           mkdir -p /tmp/deb-repo-arm64
           mkdir -p /tmp/deb-repo-all
-          
-          # Distribute DEBs by architecture to temp directories for metadata generation
+
+          # Distribute DEBs by architecture to temp directories
           for deb in debs/*.deb; do
             if [ -f "$deb" ]; then
               ARCH=$(dpkg-deb -f "$deb" Architecture)
@@ -200,75 +289,83 @@ jobs:
               esac
             fi
           done
-          
+
+          # Copy GPG public key if it exists
+          if [ -f "debs/DEB-GPG-KEY-${{ inputs.package-name }}.asc" ]; then
+            cp "debs/DEB-GPG-KEY-${{ inputs.package-name }}.asc" gh-pages/deb/
+          fi
+
           # Create repository metadata for each architecture
           echo "Creating repository metadata..."
-          for arch_dir in /tmp/deb-repo-*; do
-            if [ "$(ls -A $arch_dir/*.deb 2>/dev/null)" ]; then
+          for arch in amd64 arm64 all; do
+            arch_dir="/tmp/deb-repo-${arch}"
+            if [ "$(ls -A ${arch_dir}/*.deb 2>/dev/null)" ]; then
               cd "$arch_dir"
-              dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz
               dpkg-scanpackages . /dev/null > Packages
-              
-              # Determine target directory
-              if [[ "$arch_dir" == *"amd64"* ]]; then
-                target="gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/amd64"
-              elif [[ "$arch_dir" == *"arm64"* ]]; then
-                target="gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/arm64"
-              else
-                target="gh-pages/deb/ubuntu/${{ inputs.ubuntu-version || '24.04' }}/all"
-              fi
-              
+              gzip -9c Packages > Packages.gz
+
               # Copy metadata to gh-pages
-              cp Packages Packages.gz "$target/"
-              cd -
+              cp Packages Packages.gz "${GITHUB_WORKSPACE}/${REPO_BASE}/${arch}/"
+              cd "${GITHUB_WORKSPACE}"
             fi
           done
-          
-          echo "Repository metadata structure:"
-          ls -laR gh-pages/deb/
 
-      - name: Create repository documentation
+          # Generate Release file with checksums
+          cd "${REPO_BASE}"
+          {
+            echo "Origin: xibo-players"
+            echo "Label: Xibo Players"
+            echo "Suite: stable"
+            echo "Codename: noble"
+            echo "Architectures: amd64 arm64 all"
+            echo "Components: main"
+            echo "Date: $(date -Ru)"
+            echo "MD5Sum:"
+            for f in */Packages */Packages.gz; do
+              [ -f "$f" ] || continue
+              echo " $(md5sum "$f" | cut -d' ' -f1) $(wc -c < "$f") $f"
+            done
+            echo "SHA1:"
+            for f in */Packages */Packages.gz; do
+              [ -f "$f" ] || continue
+              echo " $(sha1sum "$f" | cut -d' ' -f1) $(wc -c < "$f") $f"
+            done
+            echo "SHA256:"
+            for f in */Packages */Packages.gz; do
+              [ -f "$f" ] || continue
+              echo " $(sha256sum "$f" | cut -d' ' -f1) $(wc -c < "$f") $f"
+            done
+          } > Release
+          cd "${GITHUB_WORKSPACE}"
+
+          echo "Repository metadata structure:"
+          find gh-pages/deb/ -type f | head -50
+
+      - name: GPG-sign Release file
+        if: inputs.gpg-sign
         run: |
-          # Create README.md
-          cat > gh-pages/deb/README.md << 'EOF'
-          # Xibo Players DEB Repository
-          
-          ## Installation
-          
-          ### Add Repository
-          ```bash
-          echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
-          sudo apt-get update
-          ```
-          
-          ### Install Package
-          ```bash
-          sudo apt-get install ${{ inputs.package-name }}
-          ```
-          EOF
-          
-          # Create index.html
-          cat > gh-pages/deb/index.html << 'EOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Xibo Players DEB Repository</title>
-            <style>
-              body { font-family: Arial, sans-serif; margin: 40px; }
-              h1 { color: #333; }
-              pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; }
-            </style>
-          </head>
-          <body>
-            <h1>📦 DEB Repository</h1>
-            <p>Architectures: <a href="ubuntu/24.04/amd64/">amd64</a> | <a href="ubuntu/24.04/arm64/">arm64</a> | <a href="ubuntu/24.04/all/">all</a></p>
-            <h2>Installation</h2>
-            <pre>echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
-sudo apt-get update
-sudo apt-get install ${{ inputs.package-name }}</pre>
-          </body>
-          </html>
-          EOF
+          UBUNTU_VER="${{ inputs.ubuntu-version || '24.04' }}"
+          RELEASE_FILE="gh-pages/deb/ubuntu/${UBUNTU_VER}/Release"
+
+          # Import GPG key
+          echo "${{ secrets.DEB_GPG_KEY }}" | gpg --batch --import
+
+          # Create detached signature (Release.gpg)
+          gpg --batch --pinentry-mode loopback \
+            --passphrase "${{ secrets.DEB_GPG_PASSPHRASE }}" \
+            --armor --detach-sign \
+            --output "${RELEASE_FILE}.gpg" \
+            "${RELEASE_FILE}"
+
+          # Create inline signature (InRelease)
+          gpg --batch --pinentry-mode loopback \
+            --passphrase "${{ secrets.DEB_GPG_PASSPHRASE }}" \
+            --armor --clearsign \
+            --output "$(dirname ${RELEASE_FILE})/InRelease" \
+            "${RELEASE_FILE}"
+
+          echo "Signed Release files:"
+          ls -lh "$(dirname ${RELEASE_FILE})"/Release* "$(dirname ${RELEASE_FILE})"/InRelease
 
       - name: Push to gh-pages
         run: |
@@ -276,18 +373,18 @@ sudo apt-get install ${{ inputs.package-name }}</pre>
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          
+
           # Check if there are changes
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
           fi
-          
+
           git commit -m "Update DEB repository - ${{ inputs.package-name }}"
-          
+
           # Pull with rebase to handle concurrent pushes
           git pull --rebase "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages || true
-          
+
           # Push changes
           git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
         env:
