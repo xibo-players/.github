@@ -1,0 +1,43 @@
+name: Publish to npm (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '22'
+      pnpm-version:
+        type: string
+        default: '10'
+      publish-command:
+        type: string
+        default: 'pnpm publish --no-git-checks --access public'
+        description: 'Publish command. For monorepos use: pnpm -r publish --no-git-checks --access public'
+    secrets:
+      npm-token:
+        required: true
+        description: 'NPM_TOKEN for authentication'
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ inputs.pnpm-version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: ${{ inputs.publish-command }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
