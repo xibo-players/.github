@@ -15,6 +15,10 @@ on:
         type: string
         default: 'build-rpm.sh'
         description: 'Path to the RPM build script'
+      rpm-spec:
+        type: string
+        default: ''
+        description: 'Path to the RPM spec file (e.g. package.spec). If provided, uses rpmbuild instead of rpm-script.'
       rpm-output-dir:
         type: string
         default: 'dist'
@@ -92,13 +96,61 @@ jobs:
 
       - name: Build RPM
         run: |
-          if [ -f "${{ inputs.rpm-script }}" ]; then
+          VERSION="${{ steps.version.outputs.version }}"
+          
+          # Check if spec file is provided
+          if [ -n "${{ inputs.rpm-spec }}" ] && [ -f "${{ inputs.rpm-spec }}" ]; then
+            echo "Building RPM from spec file: ${{ inputs.rpm-spec }}"
+            
+            # Setup rpmbuild directory structure
+            rpmdev-setuptree
+            
+            # Copy spec file to SPECS directory
+            cp "${{ inputs.rpm-spec }}" ~/rpmbuild/SPECS/
+            SPEC_FILE=~/rpmbuild/SPECS/$(basename "${{ inputs.rpm-spec }}")
+            
+            # Replace version in spec file
+            sed -i "s/^Version:.*/Version: ${VERSION}/" "$SPEC_FILE"
+            
+            # Copy source files if they exist
+            if [ -d "dist" ] || [ -d "build" ] || [ -d "target" ]; then
+              echo "Copying build artifacts to SOURCES..."
+              # Create a tarball of the build output
+              PACKAGE_NAME="${{ inputs.package-name }}"
+              tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz \
+                dist/ build/ target/ 2>/dev/null || \
+                tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz \
+                  --exclude='node_modules' --exclude='.git' . 2>/dev/null || true
+            fi
+            
+            # Build the RPM
+            rpmbuild -bb "$SPEC_FILE"
+            
+            # Copy built RPMs to output directory
+            mkdir -p ${{ inputs.rpm-output-dir }}
+            find ~/rpmbuild/RPMS/ -name "*.rpm" -exec cp {} ${{ inputs.rpm-output-dir }}/ \;
+            
+            echo "RPM build completed from spec file"
+            
+          # Fall back to build script (backward compatible)
+          elif [ -f "${{ inputs.rpm-script }}" ]; then
+            echo "Building RPM using script: ${{ inputs.rpm-script }}"
             chmod +x ${{ inputs.rpm-script }}
-            ./${{ inputs.rpm-script }} "${{ steps.version.outputs.version }}"
+            ./${{ inputs.rpm-script }} "${VERSION}"
+            
           else
-            echo "Error: RPM script ${{ inputs.rpm-script }} not found"
+            echo "Error: Neither RPM spec file (${{ inputs.rpm-spec }}) nor RPM script (${{ inputs.rpm-script }}) found"
             exit 1
           fi
+          
+          # Verify RPMs were created
+          if [ ! -f "${{ inputs.rpm-output-dir }}"/*.rpm ]; then
+            echo "Error: No RPM files found in ${{ inputs.rpm-output-dir }}"
+            exit 1
+          fi
+          
+          echo "Built RPMs:"
+          ls -lh ${{ inputs.rpm-output-dir }}/*.rpm
 
       - uses: actions/upload-artifact@v4
         with:
