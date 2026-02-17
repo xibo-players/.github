@@ -9,11 +9,12 @@ This repository contains reusable GitHub Actions workflows that can be used acro
 ## 🔗 Quick Links
 
 - **📦 Browse Published RPMs**: https://dnf.xiboplayer.org/rpm/
+- **📦 Browse Published DEBs**: https://dnf.xiboplayer.org/deb/
 - **💿 Browse Kiosk Images**: https://dnf.xiboplayer.org/images/
 - **📖 Where Can I See the RPMs?**: [RPMS.md](RPMS.md)
 - **🔧 Repository Setup Script**: https://dnf.xiboplayer.org/scripts/setup-repo.sh
 
-### Install from RPM Repository
+### Install from RPM Repository (Fedora/RHEL)
 
 ```bash
 # Quick setup
@@ -21,6 +22,17 @@ curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash
 
 # Install packages
 sudo dnf install xiboplayer-electron
+```
+
+### Install from DEB Repository (Debian/Ubuntu)
+
+```bash
+# Add repository
+echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+sudo apt-get update
+
+# Install packages
+sudo apt-get install xiboplayer-electron
 ```
 
 ---

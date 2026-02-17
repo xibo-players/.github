@@ -144,7 +144,9 @@ jobs:
           fi
           
           # Verify RPMs were created
-          if [ ! -f "${{ inputs.rpm-output-dir }}"/*.rpm ]; then
+          shopt -s nullglob
+          rpm_files=(${{ inputs.rpm-output-dir }}/*.rpm)
+          if [ ${#rpm_files[@]} -eq 0 ]; then
             echo "Error: No RPM files found in ${{ inputs.rpm-output-dir }}"
             exit 1
           fi
