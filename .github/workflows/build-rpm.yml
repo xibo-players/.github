@@ -50,17 +50,19 @@ jobs:
   build:
     name: Build ${{ inputs.package-name }} RPM
     runs-on: ubuntu-latest
+    container:
+      image: fedora:43
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install rpm tools
-        run: sudo apt-get update && sudo apt-get install -y rpm rpm-build createrepo-c systemd
+        run: dnf install -y rpm-build rpmdevtools createrepo_c
 
       - uses: pnpm/action-setup@v4
         if: inputs.build-command != ''
         with:
-          version: 8
+          version: latest
 
       - uses: actions/setup-node@v4
         if: inputs.build-command != ''
