@@ -1,0 +1,151 @@
+name: Build RPM (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      package-name:
+        required: true
+        type: string
+        description: 'RPM package name (e.g. xiboplayer-electron)'
+      build-method:
+        type: string
+        default: 'fedora'
+        description: 'Build environment: "fedora" (container) or "ubuntu" (apt install rpm)'
+      build-command:
+        type: string
+        default: ''
+        description: 'Build command before RPM (e.g. pnpm run build:linux). Empty = skip.'
+      rpm-script:
+        type: string
+        default: 'build-rpm.sh'
+        description: 'Path to the RPM build script'
+      rpm-output-dir:
+        type: string
+        default: 'dist'
+        description: 'Directory where RPM files are output'
+      node-version:
+        type: string
+        default: '22'
+      pnpm-version:
+        type: string
+        default: '10'
+      default-version:
+        type: string
+        default: '0.2.0'
+      release-body:
+        type: string
+        default: ''
+        description: 'Custom release body markdown. Empty = auto-generated.'
+
+jobs:
+  build:
+    name: Build ${{ inputs.package-name }} RPM
+    runs-on: ubuntu-latest
+    container: ${{ inputs.build-method == 'fedora' && 'fedora:latest' || '' }}
+
+    steps:
+      - name: Install build tools (Fedora)
+        if: inputs.build-method == 'fedora'
+        run: dnf install -y rpm-build rpmdevtools git systemd-rpm-macros
+
+      - name: Install build tools (Ubuntu)
+        if: inputs.build-method == 'ubuntu'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        if: inputs.build-command != ''
+        with:
+          version: ${{ inputs.pnpm-version }}
+
+      - uses: actions/setup-node@v4
+        if: inputs.build-command != ''
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install dependencies
+        if: inputs.build-command != ''
+        run: pnpm install
+
+      - name: Build application
+        if: inputs.build-command != ''
+        run: ${{ inputs.build-command }}
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build RPM
+        run: |
+          chmod +x ${{ inputs.rpm-script }}
+          ./${{ inputs.rpm-script }} "${{ steps.version.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-rpm
+          path: ${{ inputs.rpm-output-dir }}/*.rpm
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-rpm
+          path: dist/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: "${{ inputs.package-name }} ${{ github.ref_name }}"
+          body: ${{ inputs.release-body || format('## {0}\n\n### Installation\n```bash\nsudo dnf install ./{0}-*.rpm\n```', inputs.package-name) }}
+          files: dist/*.rpm
+          draft: false
+          prerelease: false
+
+  publish-rpm:
+    name: Publish to gh-pages dnf repo
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+        continue-on-error: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-rpm
+          path: rpms/
+
+      - name: Setup dnf repo
+        run: |
+          mkdir -p gh-pages/rpm/packages
+          cp rpms/*.rpm gh-pages/rpm/packages/ 2>/dev/null || true
+          docker run --rm -v "$PWD/gh-pages/rpm:/repo" fedora:latest \
+            bash -c "dnf install -y createrepo_c && createrepo_c /repo"
+
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: gh-pages
+          keep_files: true
