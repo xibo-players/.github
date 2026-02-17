@@ -47,6 +47,7 @@ git clean -fd
 # Create directory structure
 echo "Creating directory structure..."
 mkdir -p rpm/fedora/43/{x86_64,aarch64,noarch}
+mkdir -p deb/ubuntu/24.04/{amd64,arm64,all}
 mkdir -p images
 mkdir -p scripts
 
@@ -89,12 +90,21 @@ cat > index.html << 'EOF'
 <body>
     <h1>🎯 Xibo Players - Shared Resources</h1>
     
-    <p>Welcome! This page provides access to RPM packages, kiosk images, and installation scripts.</p>
+    <p>Welcome! This page provides access to RPM packages, DEB packages, kiosk images, and installation scripts.</p>
 
     <div class="card">
-        <h3>📦 RPM Repository</h3>
+        <h3>📦 RPM Repository (Fedora/RHEL)</h3>
         <p><a href="rpm/">Browse RPM packages →</a></p>
-        <pre>curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash</pre>
+        <pre>curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash
+sudo dnf install xiboplayer-electron</pre>
+    </div>
+
+    <div class="card">
+        <h3>📦 DEB Repository (Debian/Ubuntu)</h3>
+        <p><a href="deb/">Browse DEB packages →</a></p>
+        <pre>echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+sudo apt-get update
+sudo apt-get install xiboplayer-electron</pre>
     </div>
 
     <div class="card">
@@ -135,6 +145,32 @@ sudo dnf install xiboplayer-electron</pre>
 </html>
 RPMEOF
 
+# Create deb/index.html
+cat > deb/index.html << 'DEBEOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Xibo Players - DEB Repository</title>
+    <style>
+        body { font-family: sans-serif; max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+        h1 { color: #0066cc; }
+        pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; }
+        a { color: #0066cc; }
+    </style>
+</head>
+<body>
+    <h1>📦 DEB Repository</h1>
+    <p>Architectures: <a href="ubuntu/24.04/amd64/">amd64</a> | <a href="ubuntu/24.04/arm64/">arm64</a> | <a href="ubuntu/24.04/all/">all</a></p>
+    <h2>Installation</h2>
+    <pre>echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+sudo apt-get update
+sudo apt-get install xiboplayer-electron</pre>
+    <p><a href="../">← Back</a></p>
+</body>
+</html>
+DEBEOF
+
 # Create images/index.html
 cat > images/index.html << 'IMGEOF'
 <!DOCTYPE html>
@@ -166,17 +202,22 @@ chmod +x scripts/setup-repo.sh
 touch rpm/fedora/43/x86_64/.gitkeep
 touch rpm/fedora/43/aarch64/.gitkeep
 touch rpm/fedora/43/noarch/.gitkeep
+touch deb/ubuntu/24.04/amd64/.gitkeep
+touch deb/ubuntu/24.04/arm64/.gitkeep
+touch deb/ubuntu/24.04/all/.gitkeep
 
 # Commit
 echo "Committing files..."
 git add -A
-git commit -m "Initial gh-pages setup with RPM repository structure
+git commit -m "Initial gh-pages setup with RPM and DEB repository structure
 
-- Created root index.html
+- Created root index.html with RPM and DEB sections
 - Created rpm/index.html  
+- Created deb/index.html
 - Created images/index.html
 - Added setup-repo.sh script
-- Created rpm/fedora/43/{x86_64,aarch64,noarch} structure"
+- Created rpm/fedora/43/{x86_64,aarch64,noarch} structure
+- Created deb/ubuntu/24.04/{amd64,arm64,all} structure"
 
 echo ""
 echo "===================================="
@@ -191,6 +232,7 @@ echo ""
 echo "URLs will be available at:"
 echo "  https://dnf.xiboplayer.org/"
 echo "  https://dnf.xiboplayer.org/rpm/"
+echo "  https://dnf.xiboplayer.org/deb/"
 echo "  https://dnf.xiboplayer.org/images/"
 echo ""
 echo "Note: Custom domain dnf.xiboplayer.org is configured"

@@ -19,6 +19,7 @@ git clean -fd
 
 # Create directory structure
 mkdir -p rpm/fedora/43/{x86_64,aarch64,noarch}
+mkdir -p deb/ubuntu/24.04/{amd64,arm64,all}
 mkdir -p images
 mkdir -p scripts
 
@@ -63,6 +64,7 @@ After the gh-pages branch exists, ensure GitHub Pages is enabled:
 Once enabled and the custom domain (dnf.xiboplayer.org) is configured, the following URLs should be accessible:
 - https://dnf.xiboplayer.org/ - Main index
 - https://dnf.xiboplayer.org/rpm/ - RPM repository index
+- https://dnf.xiboplayer.org/deb/ - DEB repository index
 - https://dnf.xiboplayer.org/images/ - Kiosk images index
 - https://dnf.xiboplayer.org/scripts/setup-repo.sh - Setup script
 
@@ -70,5 +72,10 @@ The RPM repository structure will be:
 - https://dnf.xiboplayer.org/rpm/fedora/43/x86_64/
 - https://dnf.xiboplayer.org/rpm/fedora/43/aarch64/
 - https://dnf.xiboplayer.org/rpm/fedora/43/noarch/
+
+The DEB repository structure will be:
+- https://dnf.xiboplayer.org/deb/ubuntu/24.04/amd64/
+- https://dnf.xiboplayer.org/deb/ubuntu/24.04/arm64/
+- https://dnf.xiboplayer.org/deb/ubuntu/24.04/all/
 
 **Note:** The custom domain `dnf.xiboplayer.org` is now configured. See [CUSTOM-DOMAIN-SETUP.md](CUSTOM-DOMAIN-SETUP.md) for details on the custom domain setup.
