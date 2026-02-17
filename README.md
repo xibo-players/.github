@@ -2,6 +2,25 @@
 
 This repository contains reusable GitHub Actions workflows that can be used across all Xibo Players repositories. By centralizing workflows here, we maintain consistency and reduce duplication.
 
+## 🔗 Quick Links
+
+- **📦 Browse Published RPMs**: https://xibo-players.github.io/.github/rpm/
+- **💿 Browse Kiosk Images**: https://xibo-players.github.io/.github/images/
+- **📖 Where Can I See the RPMs?**: [RPMS.md](RPMS.md)
+- **🔧 Repository Setup Script**: https://xibo-players.github.io/.github/scripts/setup-repo.sh
+
+### Install from RPM Repository
+
+```bash
+# Quick setup
+curl -fsSL https://xibo-players.github.io/.github/scripts/setup-repo.sh | sudo bash
+
+# Install packages
+sudo dnf install xiboplayer-electron
+```
+
+---
+
 ## Available Workflows
 
 ### 1. Build RPM (`build-rpm.yml`)
