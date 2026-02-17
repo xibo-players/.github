@@ -235,8 +235,8 @@ jobs:
           
           ### For manual installation from releases:
           ```bash
-          # Download RPM from releases (replace VERSION with actual release tag)
-          wget https://github.com/${{ github.repository }}/releases/download/VERSION/${{ inputs.package-name }}.rpm
+          # Download RPM from releases (replace v0.2.0 with actual release tag)
+          wget https://github.com/${{ github.repository }}/releases/download/v0.2.0/${{ inputs.package-name }}.rpm
           sudo dnf install ./${{ inputs.package-name }}.rpm
           ```
           
@@ -271,8 +271,8 @@ jobs:
             <div class="repo-config">
               <h2>Manual Installation</h2>
               <p>Download RPM files from GitHub Releases:</p>
-              <pre># Download from releases (replace VERSION with actual release tag)
-          wget https://github.com/${{ github.repository }}/releases/download/VERSION/${{ inputs.package-name }}.rpm
+              <pre># Download from releases (replace v0.2.0 with actual release tag)
+          wget https://github.com/${{ github.repository }}/releases/download/v0.2.0/${{ inputs.package-name }}.rpm
           
           # Install locally
           sudo dnf install ./${{ inputs.package-name }}.rpm</pre>
