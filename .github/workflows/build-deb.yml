@@ -57,6 +57,10 @@ jobs:
           apt-get update
           apt-get install -y dpkg-dev debhelper build-essential curl
 
+      - name: Install Node.js for pnpm-action
+        if: inputs.build-command != ''
+        run: apt-get install -y nodejs
+
       - uses: pnpm/action-setup@v4
         if: inputs.build-command != ''
         with:
