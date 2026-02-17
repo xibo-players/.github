@@ -230,6 +230,16 @@ jobs:
 
       - name: Publish RPMs metadata to repo
         run: |
+          # Determine the release tag/version for baseurl
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            RELEASE_TAG="${{ github.ref_name }}"
+          else
+            RELEASE_TAG="latest"
+          fi
+          
+          BASEURL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}"
+          echo "Using baseurl: ${BASEURL}"
+          
           # Create proper repository structure in gh-pages
           mkdir -p gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/x86_64
           mkdir -p gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/aarch64
@@ -262,22 +272,22 @@ jobs:
             fi
           done
           
-          # Create repository metadata for each architecture
+          # Create repository metadata with baseurl pointing to GitHub Releases
           echo "Creating repository metadata..."
           if [ "$(ls -A /tmp/rpm-repo-x86_64/*.rpm 2>/dev/null)" ]; then
-            createrepo_c /tmp/rpm-repo-x86_64/
-            # Copy ONLY metadata, not RPM files
+            createrepo_c --baseurl "${BASEURL}" /tmp/rpm-repo-x86_64/
+            # Copy ONLY metadata, not RPM files (they stay in GitHub Releases)
             cp -r /tmp/rpm-repo-x86_64/repodata gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/x86_64/
           fi
           
           if [ "$(ls -A /tmp/rpm-repo-aarch64/*.rpm 2>/dev/null)" ]; then
-            createrepo_c /tmp/rpm-repo-aarch64/
+            createrepo_c --baseurl "${BASEURL}" /tmp/rpm-repo-aarch64/
             # Copy ONLY metadata, not RPM files
             cp -r /tmp/rpm-repo-aarch64/repodata gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/aarch64/
           fi
           
           if [ "$(ls -A /tmp/rpm-repo-noarch/*.rpm 2>/dev/null)" ]; then
-            createrepo_c /tmp/rpm-repo-noarch/
+            createrepo_c --baseurl "${BASEURL}" /tmp/rpm-repo-noarch/
             # Copy ONLY metadata, not RPM files
             cp -r /tmp/rpm-repo-noarch/repodata gh-pages/rpm/fedora/${{ inputs.fedora-version || '43' }}/noarch/
           fi
@@ -294,20 +304,36 @@ jobs:
           ## Repository Structure
           
           This repository uses a hybrid approach:
-          - **Metadata** (repodata): Stored in gh-pages for DNF/YUM compatibility
+          - **Metadata** (repodata): Stored in gh-pages (fast, lightweight)
           - **RPM files**: Stored as GitHub Release assets (supports large files up to 2GB)
+          - **DNF/YUM**: Automatically downloads RPMs from Releases using metadata
           
           ## Installation
           
-          ### For manual installation from releases:
+          ### Add the repository:
+          ```bash
+          cat > /etc/yum.repos.d/xibo-players.repo << 'REPO'
+          [xibo-players]
+          name=Xibo Players
+          baseurl=https://dnf.xiboplayer.org/rpm/fedora/${{ inputs.fedora-version || '43' }}/$basearch
+          enabled=1
+          gpgcheck=0
+          REPO
+          ```
+          
+          ### Install packages:
+          ```bash
+          sudo dnf install ${{ inputs.package-name }}
+          ```
+          
+          DNF will read metadata from gh-pages but download RPMs from GitHub Releases automatically.
+          
+          ### Manual installation from releases:
           ```bash
           # Download RPM from releases (replace v0.2.0 with actual release tag)
           wget https://github.com/${{ github.repository }}/releases/download/v0.2.0/${{ inputs.package-name }}.rpm
           sudo dnf install ./${{ inputs.package-name }}.rpm
           ```
-          
-          ### For DNF repository (coming soon):
-          Repository metadata is available, but full DNF integration requires baseurl configuration to point to GitHub Releases.
           EOF
           
           # Create index.html for easy browsing
@@ -322,16 +348,35 @@ jobs:
               .repo-config { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
               pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
               .arch { margin: 20px 0; }
-              .warning { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 5px; margin: 20px 0; }
+              .info { background: #d1ecf1; border: 1px solid #17a2b8; padding: 15px; border-radius: 5px; margin: 20px 0; }
             </style>
           </head>
           <body>
             <h1>Xibo Players RPM Repository</h1>
             
-            <div class="warning">
-              <h2>⚠️ Important: Hybrid Repository Structure</h2>
-              <p>This repository stores <strong>metadata only</strong> in gh-pages. Large RPM files (>100MB) are stored as GitHub Release assets.</p>
-              <p>For installation, please download RPMs directly from the <a href="https://github.com/${{ github.repository }}/releases">Releases page</a>.</p>
+            <div class="info">
+              <h2>✅ Hybrid Repository Structure</h2>
+              <p>This repository uses a hybrid approach for optimal performance:</p>
+              <ul>
+                <li><strong>Metadata (repodata)</strong>: Stored in gh-pages (fast, lightweight ~100KB)</li>
+                <li><strong>RPM files</strong>: Stored as GitHub Release assets (supports large files up to 2GB)</li>
+                <li><strong>DNF/YUM</strong>: Automatically downloads RPMs from Releases using the metadata</li>
+              </ul>
+            </div>
+            
+            <div class="repo-config">
+              <h2>DNF Installation (Recommended)</h2>
+              <p>Add the repository to your system:</p>
+              <pre>cat > /etc/yum.repos.d/xibo-players.repo &lt;&lt; 'REPO'
+          [xibo-players]
+          name=Xibo Players
+          baseurl=https://dnf.xiboplayer.org/rpm/fedora/${{ inputs.fedora-version || '43' }}/$basearch
+          enabled=1
+          gpgcheck=0
+          REPO</pre>
+              <p>Then install packages:</p>
+              <pre>sudo dnf install ${{ inputs.package-name }}</pre>
+              <p>DNF will automatically download RPMs from GitHub Releases.</p>
             </div>
             
             <div class="repo-config">
