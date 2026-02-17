@@ -132,7 +132,74 @@ rpm/
 
 ---
 
-### 2. Build PWA (`build-pwa.yml`)
+### 2. Build DEB (`build-deb.yml`)
+
+Builds DEB packages for Debian/Ubuntu distributions and publishes them to an apt repository on gh-pages.
+
+**Usage:**
+```yaml
+name: Build DEB
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-deb:
+    uses: xibo-players/.github/.github/workflows/build-deb.yml@main
+    with:
+      package-name: 'xiboplayer-electron'
+      build-command: 'pnpm run build:linux'
+      deb-script: 'build-deb.sh'
+      deb-output-dir: 'dist'
+      node-version: '22'
+      default-version: '0.2.0'
+```
+
+**Inputs:**
+- `package-name` (required): DEB package name
+- `build-command`: Build command before DEB (optional)
+- `deb-script`: Path to DEB build script (default: `build-deb.sh`)
+- `deb-output-dir`: Directory where DEB files are output (default: `dist`)
+- `node-version`: Node.js version (default: `22`)
+- `default-version`: Default version if not tagged (default: `0.2.0`)
+- `release-body`: Custom release body markdown (optional)
+- `publish-to-repo`: Publish to gh-pages repository (default: `true`)
+- `create-github-release`: Create GitHub Release for tags (default: `true`)
+- `ubuntu-version`: Ubuntu version number for repository structure (default: `24.04`)
+
+**Features:**
+- Uses Ubuntu container for native DEB building
+- Installs DEB build tools with dpkg-dev
+- Runs optional build command with pnpm caching
+- Validates DEB script exists before running
+- Publishes to gh-pages apt repository on every successful build (configurable)
+- Creates GitHub releases for tags (configurable)
+- Publishes to gh-pages apt repository with proper structure:
+  - `deb/ubuntu/24.04/amd64/` - 64-bit Intel/AMD packages
+  - `deb/ubuntu/24.04/arm64/` - 64-bit ARM packages  
+  - `deb/ubuntu/24.04/all/` - Architecture-independent packages
+- Automatically creates repository metadata with `dpkg-scanpackages`
+
+**Installing Published DEBs:**
+
+Once your DEBs are published, users can install them from your gh-pages repository:
+
+```bash
+# Add the repository
+echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+sudo apt-get update
+
+# Install your package
+sudo apt-get install your-package-name
+```
+
+---
+
+### 3. Build PWA (`build-pwa.yml`)
 
 Builds Progressive Web App distributions and creates tarballs.
 
@@ -171,7 +238,7 @@ jobs:
 
 ---
 
-### 3. Publish to npm (`publish-npm.yml`)
+### 4. Publish to npm (`publish-npm.yml`)
 
 Publishes packages to the npm registry.
 
@@ -207,7 +274,7 @@ jobs:
 
 ---
 
-### 4. Build ISO (`build-iso.yml`)
+### 5. Build ISO (`build-iso.yml`)
 
 Builds bootable kiosk images for Xibo players using modern mkosi tool. Supports installer ISOs, VM images (QCOW2), and raw disk images for both x86_64 and aarch64.
 
@@ -297,7 +364,7 @@ xz -dc xiboplayer-kiosk_1.0.0_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M
 
 ---
 
-### 5. Test (`test.yml`)
+### 6. Test (`test.yml`)
 
 Runs automated tests.
 
