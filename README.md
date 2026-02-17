@@ -8,16 +8,16 @@ This repository contains reusable GitHub Actions workflows that can be used acro
 
 ## 🔗 Quick Links
 
-- **📦 Browse Published RPMs**: https://xibo-players.github.io/.github/rpm/
-- **💿 Browse Kiosk Images**: https://xibo-players.github.io/.github/images/
+- **📦 Browse Published RPMs**: https://dnf.xiboplayer.org/rpm/
+- **💿 Browse Kiosk Images**: https://dnf.xiboplayer.org/images/
 - **📖 Where Can I See the RPMs?**: [RPMS.md](RPMS.md)
-- **🔧 Repository Setup Script**: https://xibo-players.github.io/.github/scripts/setup-repo.sh
+- **🔧 Repository Setup Script**: https://dnf.xiboplayer.org/scripts/setup-repo.sh
 
 ### Install from RPM Repository
 
 ```bash
 # Quick setup
-curl -fsSL https://xibo-players.github.io/.github/scripts/setup-repo.sh | sudo bash
+curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash
 
 # Install packages
 sudo dnf install xiboplayer-electron
@@ -96,7 +96,7 @@ Once your RPMs are published, users can install them from your gh-pages reposito
 sudo tee /etc/yum.repos.d/xibo-players.repo <<'EOF'
 [xibo-players]
 name=Xibo Players
-baseurl=https://xibo-players.github.io/.github/rpm/fedora/$releasever/$basearch/
+baseurl=https://dnf.xiboplayer.org/rpm/fedora/$releasever/$basearch/
 enabled=1
 gpgcheck=0
 EOF
@@ -108,7 +108,7 @@ sudo dnf install your-package-name
 Or use the setup script:
 
 ```bash
-curl -fsSL https://xibo-players.github.io/.github/scripts/setup-repo.sh | sudo bash
+curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash
 ```
 
 **Repository Structure:**
@@ -280,7 +280,7 @@ jobs:
 
 **Published Images:**
 
-Images are published to gh-pages at: `https://xibo-players.github.io/.github/images/`
+Images are published to gh-pages at: `https://dnf.xiboplayer.org/images/`
 
 Users can download and flash:
 ```bash

@@ -94,7 +94,7 @@ cat > index.html << 'EOF'
     <div class="card">
         <h3>📦 RPM Repository</h3>
         <p><a href="rpm/">Browse RPM packages →</a></p>
-        <pre>curl -fsSL https://xibo-players.github.io/.github/scripts/setup-repo.sh | sudo bash</pre>
+        <pre>curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash</pre>
     </div>
 
     <div class="card">
@@ -128,7 +128,7 @@ cat > rpm/index.html << 'RPMEOF'
     <h1>📦 RPM Repository</h1>
     <p>Architectures: <a href="fedora/43/x86_64/">x86_64</a> | <a href="fedora/43/aarch64/">aarch64</a> | <a href="fedora/43/noarch/">noarch</a></p>
     <h2>Installation</h2>
-    <pre>curl -fsSL https://xibo-players.github.io/.github/scripts/setup-repo.sh | sudo bash
+    <pre>curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash
 sudo dnf install xiboplayer-electron</pre>
     <p><a href="../">← Back</a></p>
 </body>
@@ -189,7 +189,9 @@ echo "2. Enable GitHub Pages in repository settings"
 echo "3. Set source to 'gh-pages' branch, '/' root"
 echo ""
 echo "URLs will be available at:"
-echo "  https://xibo-players.github.io/.github/"
-echo "  https://xibo-players.github.io/.github/rpm/"
-echo "  https://xibo-players.github.io/.github/images/"
+echo "  https://dnf.xiboplayer.org/"
+echo "  https://dnf.xiboplayer.org/rpm/"
+echo "  https://dnf.xiboplayer.org/images/"
+echo ""
+echo "Note: Custom domain dnf.xiboplayer.org is configured"
 echo ""
