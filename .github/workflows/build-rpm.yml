@@ -95,6 +95,7 @@ jobs:
           fi
 
       - name: Build RPM
+        shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           
@@ -113,14 +114,21 @@ jobs:
             sed -i "s/^Version:.*/Version: ${VERSION}/" "$SPEC_FILE"
             
             # Copy source files if they exist
-            if [ -d "dist" ] || [ -d "build" ] || [ -d "target" ]; then
-              echo "Copying build artifacts to SOURCES..."
-              # Create a tarball of the build output
+            if [ -d "dist" ]; then
+              echo "Copying dist/ directory to SOURCES..."
               PACKAGE_NAME="${{ inputs.package-name }}"
-              tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz \
-                dist/ build/ target/ 2>/dev/null || \
-                tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz \
-                  --exclude='node_modules' --exclude='.git' . 2>/dev/null || true
+              tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz dist/
+            elif [ -d "build" ]; then
+              echo "Copying build/ directory to SOURCES..."
+              PACKAGE_NAME="${{ inputs.package-name }}"
+              tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz build/
+            elif [ -d "target" ]; then
+              echo "Copying target/ directory to SOURCES..."
+              PACKAGE_NAME="${{ inputs.package-name }}"
+              tar -czf ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}.tar.gz target/
+            else
+              echo "Warning: No dist/, build/, or target/ directory found for source tarball"
+              echo "If your spec file requires Source0, the build may fail"
             fi
             
             # Build the RPM
