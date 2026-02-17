@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install rpm tools
-        run: sudo apt-get update && sudo apt-get install -y rpm rpmbuild rpm-build createrepo-c
+        run: sudo apt-get update && sudo apt-get install -y rpm rpm-build createrepo-c
 
       - uses: pnpm/action-setup@v4
         if: inputs.build-command != ''
@@ -54,7 +54,7 @@ jobs:
 
       - name: Install dependencies
         if: inputs.build-command != ''
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build application
         if: inputs.build-command != ''
@@ -131,6 +131,8 @@ jobs:
             mkdir -p gh-pages/rpm/packages
             cd gh-pages
             git init
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
             git checkout -b gh-pages
           fi
 
