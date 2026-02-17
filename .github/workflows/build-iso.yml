@@ -72,7 +72,9 @@ jobs:
         run: |
           if [ -f "${{ inputs.mkosi-config }}" ]; then
             echo "Using provided mkosi configuration"
-            cp "${{ inputs.mkosi-config }}" mkosi.conf
+            if [ "${{ inputs.mkosi-config }}" != "mkosi.conf" ]; then
+              cp "${{ inputs.mkosi-config }}" mkosi.conf
+            fi
           else
             echo "Using template mkosi configuration"
             cp scripts/mkosi/mkosi.conf.template mkosi.conf
