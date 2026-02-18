@@ -67,6 +67,9 @@ on:
       RPM_GPG_KEY_ID:
         required: false
         description: 'GPG key ID for signing (e.g. name or email)'
+      PAGES_TOKEN:
+        required: false
+        description: 'PAT with contents:write on xibo-players.github.io for central repo publishing'
 
 jobs:
   build:
@@ -353,14 +356,12 @@ jobs:
           prerelease: false
 
   publish-rpm:
-    name: Publish to gh-pages dnf repo
+    name: Publish to central dnf repo
     needs: sign
     if: inputs.publish-to-repo
     runs-on: ubuntu-latest
     container:
       image: fedora:${{ inputs.fedora-version || '43' }}
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/download-artifact@v4
@@ -368,124 +369,114 @@ jobs:
           name: ${{ inputs.package-name }}-rpm-signed
           path: rpms/
 
-      - name: Install createrepo and git
+      - name: Install tools
         run: dnf install -y createrepo_c git
 
-      - name: Checkout gh-pages branch
+      - name: Checkout central pages repo
         uses: actions/checkout@v4
         with:
-          ref: gh-pages
-          path: gh-pages
+          repository: xibo-players/xibo-players.github.io
+          token: ${{ secrets.PAGES_TOKEN }}
+          path: pages
           fetch-depth: 1
-        continue-on-error: true
 
-      - name: Initialize gh-pages if needed
+      - name: Generate per-repo repodata and merge
+        shell: bash
         run: |
-          BRANCH=$(cd gh-pages 2>/dev/null && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "none")
-          if [ "$BRANCH" != "gh-pages" ]; then
-            rm -rf gh-pages
-            mkdir -p gh-pages
-            cd gh-pages
-            git init
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git checkout -b gh-pages
-          fi
+          FEDORA_VER="${{ inputs.fedora-version || '43' }}"
+          PKG="${{ inputs.package-name }}"
 
-      - name: Publish RPMs metadata to repo
-        run: |
-          # Determine the release tag/version for baseurl
+          # Determine the release download URL for this repo's RPMs
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             RELEASE_TAG="${{ github.ref_name }}"
           else
             RELEASE_TAG="latest"
           fi
-
           BASEURL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}"
-          echo "Using baseurl: ${BASEURL}"
+          echo "Package baseurl: ${BASEURL}"
 
-          FEDORA_VER="${{ inputs.fedora-version || '43' }}"
+          # --- Step 1: Generate this repo's repodata (per-arch) ---
+          for arch in x86_64 aarch64 noarch; do
+            mkdir -p "/tmp/pkg-${arch}"
+          done
 
-          # Create proper repository structure in gh-pages
-          mkdir -p gh-pages/rpm/fedora/${FEDORA_VER}/x86_64
-          mkdir -p gh-pages/rpm/fedora/${FEDORA_VER}/aarch64
-          mkdir -p gh-pages/rpm/fedora/${FEDORA_VER}/noarch
-
-          # Create temporary directories for metadata generation
-          mkdir -p /tmp/rpm-repo-x86_64
-          mkdir -p /tmp/rpm-repo-aarch64
-          mkdir -p /tmp/rpm-repo-noarch
-
-          # Distribute RPMs by architecture to temp directories
+          # Distribute RPMs to temp arch dirs
           for rpm in rpms/*.rpm; do
-            if [ -f "$rpm" ]; then
-              case "$rpm" in
-                *.x86_64.rpm)
-                  echo "Processing x86_64: $(basename $rpm)"
-                  cp "$rpm" /tmp/rpm-repo-x86_64/
-                  ;;
-                *.aarch64.rpm)
-                  echo "Processing aarch64: $(basename $rpm)"
-                  cp "$rpm" /tmp/rpm-repo-aarch64/
-                  ;;
-                *.noarch.rpm)
-                  echo "Processing noarch: $(basename $rpm)"
-                  cp "$rpm" /tmp/rpm-repo-x86_64/
-                  cp "$rpm" /tmp/rpm-repo-aarch64/
-                  cp "$rpm" /tmp/rpm-repo-noarch/
-                  ;;
-              esac
+            [ -f "$rpm" ] || continue
+            case "$rpm" in
+              *.x86_64.rpm)  cp "$rpm" /tmp/pkg-x86_64/ ;;
+              *.aarch64.rpm) cp "$rpm" /tmp/pkg-aarch64/ ;;
+              *.noarch.rpm)
+                cp "$rpm" /tmp/pkg-x86_64/
+                cp "$rpm" /tmp/pkg-aarch64/
+                cp "$rpm" /tmp/pkg-noarch/
+                ;;
+            esac
+          done
+
+          # Generate repodata with baseurl pointing to GitHub Releases
+          for arch in x86_64 aarch64 noarch; do
+            if ls /tmp/pkg-${arch}/*.rpm &>/dev/null; then
+              createrepo_c --baseurl "${BASEURL}" /tmp/pkg-${arch}/
             fi
           done
 
-          # Copy GPG public key to gh-pages if it exists
-          if [ -f "rpms/RPM-GPG-KEY-${{ inputs.package-name }}" ]; then
-            cp "rpms/RPM-GPG-KEY-${{ inputs.package-name }}" gh-pages/rpm/
+          # --- Step 2: Save this repo's repodata to central repo ---
+          for arch in x86_64 aarch64 noarch; do
+            target="pages/_repos/${PKG}/rpm/fedora/${FEDORA_VER}/${arch}"
+            rm -rf "${target}"
+            if [ -d "/tmp/pkg-${arch}/repodata" ]; then
+              mkdir -p "${target}"
+              cp -r /tmp/pkg-${arch}/repodata "${target}/"
+            fi
+          done
+
+          # Copy GPG public key
+          if [ -f "rpms/RPM-GPG-KEY-${PKG}" ]; then
+            mkdir -p pages/rpm
+            cp "rpms/RPM-GPG-KEY-${PKG}" pages/rpm/
           fi
 
-          # Create repository metadata with baseurl pointing to GitHub Releases
-          echo "Creating repository metadata..."
-          if [ "$(ls -A /tmp/rpm-repo-x86_64/*.rpm 2>/dev/null)" ]; then
-            createrepo_c --baseurl "${BASEURL}" /tmp/rpm-repo-x86_64/
-            cp -r /tmp/rpm-repo-x86_64/repodata gh-pages/rpm/fedora/${FEDORA_VER}/x86_64/
-          fi
+          # --- Step 3: Merge all repos' repodata into unified repo ---
+          for arch in x86_64 aarch64 noarch; do
+            output="pages/rpm/fedora/${FEDORA_VER}/${arch}"
+            mkdir -p "${output}"
 
-          if [ "$(ls -A /tmp/rpm-repo-aarch64/*.rpm 2>/dev/null)" ]; then
-            createrepo_c --baseurl "${BASEURL}" /tmp/rpm-repo-aarch64/
-            cp -r /tmp/rpm-repo-aarch64/repodata gh-pages/rpm/fedora/${FEDORA_VER}/aarch64/
-          fi
+            # Collect all repos that have repodata for this arch
+            repos=()
+            for repo_dir in pages/_repos/*/rpm/fedora/${FEDORA_VER}/${arch}; do
+              if [ -d "${repo_dir}/repodata" ]; then
+                repos+=("--repo" "${repo_dir}")
+              fi
+            done
 
-          if [ "$(ls -A /tmp/rpm-repo-noarch/*.rpm 2>/dev/null)" ]; then
-            createrepo_c --baseurl "${BASEURL}" /tmp/rpm-repo-noarch/
-            cp -r /tmp/rpm-repo-noarch/repodata gh-pages/rpm/fedora/${FEDORA_VER}/noarch/
-          fi
+            if [ ${#repos[@]} -gt 0 ]; then
+              echo "Merging ${arch}: ${#repos[@]} repos → ${output}"
+              rm -rf "${output}/repodata"
+              mergerepo_c "${repos[@]}" -o "${output}"
+            fi
+          done
 
-          echo "Repository metadata structure:"
-          find gh-pages/rpm/ -type f | head -50
+          echo "Merged repository structure:"
+          find pages/rpm/fedora/ -name 'repomd.xml' 2>/dev/null
 
-      - name: Push to gh-pages
+      - name: Push to central repo
         run: |
-          cd gh-pages
+          cd pages
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
 
-          # Check if there are changes
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
           fi
 
-          git commit -m "Update RPM repository - ${{ inputs.package-name }}"
+          git commit -m "Update RPM: ${{ inputs.package-name }}"
 
-          REMOTE_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-
-          # Pull with rebase to handle concurrent pushes (skip if branch doesn't exist remotely yet)
-          if git ls-remote --exit-code "$REMOTE_URL" gh-pages >/dev/null 2>&1; then
-            git pull --rebase "$REMOTE_URL" gh-pages || true
-          fi
-
-          # Push changes
-          git push "$REMOTE_URL" gh-pages
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Retry push with rebase to handle concurrent updates from other repos
+          for i in 1 2 3; do
+            git push && break
+            echo "Push failed (attempt $i), rebasing..."
+            git pull --rebase
+          done
