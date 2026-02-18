@@ -166,7 +166,8 @@ jobs:
           GPG_KEY: ${{ secrets.DEB_GPG_KEY }}
         run: |
           # Import GPG key to export public part
-          printf '%s' "$GPG_KEY" | gpg --batch --import
+          # Secret must be base64-encoded: base64 -w0 < key.asc | gh secret set ...
+          echo "$GPG_KEY" | base64 -d | gpg --batch --import
 
           # Export public key for repository consumers
           # (APT repo signing is done in publish-deb via Release.gpg/InRelease)
@@ -347,7 +348,7 @@ jobs:
           echo "passphrase-file /tmp/gpg-passphrase" >> ~/.gnupg/gpg.conf
 
           # Import GPG key with loopback pinentry
-          printf '%s' "$GPG_KEY" | gpg --batch --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" --import
+          echo "$GPG_KEY" | base64 -d | gpg --batch --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" --import
 
           # Create detached signature (Release.gpg)
           gpg --armor --detach-sign \
