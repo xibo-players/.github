@@ -249,33 +249,28 @@ jobs:
         run: |
           dnf install -y rpm-sign gnupg2 pinentry
 
-          # Configure gpg-agent BEFORE first gpg command (agent starts lazily)
+          # Configure gpg for non-interactive signing via passphrase-file
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
-          chmod 600 ~/.gnupg/gpg-agent.conf
+          echo "${GPG_PASSPHRASE:-}" > /tmp/gpg-passphrase
+          chmod 600 /tmp/gpg-passphrase
+          echo "batch" > ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          echo "passphrase-file /tmp/gpg-passphrase" >> ~/.gnupg/gpg.conf
 
-          # Import GPG private key (agent starts with correct config)
-          echo "$GPG_KEY" | gpg --batch --import
+          # Import GPG private key
+          echo "$GPG_KEY" | gpg --import
 
-          # Restart agent to ensure config is loaded
-          gpgconf --kill gpg-agent
-          gpg-connect-agent /bye
-
-          # Preset passphrase in gpg-agent for all key grips
-          GPG_PRESET="$(gpgconf --list-dirs libexecdir)/gpg-preset-passphrase"
-          for keygrip in $(gpg --with-keygrip --list-secret-keys | grep Keygrip | awk '{print $3}'); do
-            "$GPG_PRESET" --preset --passphrase "${GPG_PASSPHRASE:-}" "$keygrip"
-          done
-
-          # Sign all RPMs (gpg-agent has cached passphrase)
+          # Sign all RPMs
           for rpm in rpms/*.rpm; do
             echo "Signing: $(basename $rpm)"
             rpmsign --define "_gpg_name ${GPG_KEY_ID}" \
                     --define "_gpg_path ~/.gnupg" \
                     --addsign "$rpm"
           done
+
+          rm -f /tmp/gpg-passphrase
 
           # Verify signatures
           echo "Verifying signatures..."

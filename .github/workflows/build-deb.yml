@@ -336,25 +336,18 @@ jobs:
           UBUNTU_VER="${{ inputs.ubuntu-version || '24.04' }}"
           RELEASE_FILE="gh-pages/deb/ubuntu/${UBUNTU_VER}/Release"
 
-          # Configure gpg-agent BEFORE first gpg command (agent starts lazily)
+          # Configure gpg for non-interactive signing via passphrase-file
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
-          chmod 600 ~/.gnupg/gpg-agent.conf
+          echo "${GPG_PASSPHRASE:-}" > /tmp/gpg-passphrase
+          chmod 600 /tmp/gpg-passphrase
+          echo "batch" > ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          echo "passphrase-file /tmp/gpg-passphrase" >> ~/.gnupg/gpg.conf
 
-          # Import GPG key (agent starts with correct config)
-          echo "$GPG_KEY" | gpg --batch --import
-
-          # Restart agent to ensure config is loaded
-          gpgconf --kill gpg-agent
-          gpg-connect-agent /bye
-
-          # Preset passphrase in gpg-agent for all key grips
-          GPG_PRESET="$(gpgconf --list-dirs libexecdir)/gpg-preset-passphrase"
-          for keygrip in $(gpg --with-keygrip --list-secret-keys | grep Keygrip | awk '{print $3}'); do
-            "$GPG_PRESET" --preset --passphrase "${GPG_PASSPHRASE:-}" "$keygrip"
-          done
+          # Import GPG key
+          echo "$GPG_KEY" | gpg --import
 
           # Create detached signature (Release.gpg)
           gpg --armor --detach-sign \
@@ -365,6 +358,8 @@ jobs:
           gpg --armor --clearsign \
             --output "$(dirname ${RELEASE_FILE})/InRelease" \
             "${RELEASE_FILE}"
+
+          rm -f /tmp/gpg-passphrase
 
           echo "Signed Release files:"
           ls -lh "$(dirname ${RELEASE_FILE})"/Release* "$(dirname ${RELEASE_FILE})"/InRelease
