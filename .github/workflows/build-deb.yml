@@ -338,11 +338,17 @@ jobs:
 
           # Configure gpg-agent BEFORE first gpg command (agent starts lazily)
           mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
           echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
+          chmod 600 ~/.gnupg/gpg-agent.conf
 
           # Import GPG key (agent starts with correct config)
           echo "$GPG_KEY" | gpg --batch --import
+
+          # Restart agent to ensure config is loaded
+          gpgconf --kill gpg-agent
+          gpg-connect-agent /bye
 
           # Preset passphrase in gpg-agent for all key grips
           GPG_PRESET="$(gpgconf --list-dirs libexecdir)/gpg-preset-passphrase"
