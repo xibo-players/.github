@@ -226,6 +226,8 @@ jobs:
     name: Sign RPMs
     needs: build
     runs-on: ubuntu-latest
+    container:
+      image: fedora:${{ inputs.fedora-version || '43' }}
 
     steps:
       - name: Download all RPM artifacts
@@ -245,28 +247,34 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
           GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
         run: |
-          sudo apt-get update && sudo apt-get install -y rpm
+          dnf install -y rpm-sign gnupg2 pinentry
 
           # Import GPG private key
           # Secret must be base64-encoded: base64 -w0 < key.asc | gh secret set ...
           echo "$GPG_KEY" | base64 -d | gpg --batch --import
 
-          # Configure GPG for non-interactive use
+          # Configure GPG for non-interactive signing
           mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+
+          # Pre-cache passphrase in gpg-agent so rpm --addsign works
           gpgconf --kill gpg-agent || true
+          gpg-agent --daemon --allow-preset-passphrase || true
+          KEYGRIP=$(gpg --list-secret-keys --with-keygrip 2>/dev/null | grep -A1 '\[S\]' | grep Keygrip | awk '{print $3}')
+          if [ -z "$KEYGRIP" ]; then
+            KEYGRIP=$(gpg --list-secret-keys --with-keygrip 2>/dev/null | grep Keygrip | head -1 | awk '{print $3}')
+          fi
+          echo "Using keygrip: $KEYGRIP"
+          echo "$GPG_PASSPHRASE" | /usr/libexec/gpg-preset-passphrase --preset "$KEYGRIP"
 
-          # Override RPM signing macro to use passphrase-fd 3
-          # (Ubuntu's rpm package uses RPM 4.x which honors this macro)
-          cat >> ~/.rpmmacros << MACROS
-          %_gpg_name ${GPG_KEY_ID}
-          %__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-fd 3 -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
-          MACROS
+          echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
 
-          # Sign all RPMs (pipe passphrase to fd 3)
+          # Sign all RPMs (gpg-agent has cached passphrase)
           for rpm in rpms/*.rpm; do
             echo "Signing: $(basename $rpm)"
-            echo "$GPG_PASSPHRASE" | rpm --addsign "$rpm" 3<&0
+            rpm --addsign "$rpm"
           done
 
           # Verify signatures
