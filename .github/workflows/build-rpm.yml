@@ -333,6 +333,9 @@ jobs:
           name: ${{ inputs.package-name }}-rpm-signed
           path: rpms/
 
+      - name: Install createrepo and git
+        run: dnf install -y createrepo_c git
+
       - name: Checkout gh-pages branch
         uses: actions/checkout@v4
         with:
@@ -343,7 +346,9 @@ jobs:
 
       - name: Initialize gh-pages if needed
         run: |
-          if [ ! -d "gh-pages/.git" ]; then
+          BRANCH=$(cd gh-pages 2>/dev/null && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "none")
+          if [ "$BRANCH" != "gh-pages" ]; then
+            rm -rf gh-pages
             mkdir -p gh-pages
             cd gh-pages
             git init
@@ -351,9 +356,6 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git checkout -b gh-pages
           fi
-
-      - name: Install createrepo and git
-        run: dnf install -y createrepo_c git
 
       - name: Publish RPMs metadata to repo
         run: |

@@ -226,7 +226,9 @@ jobs:
 
       - name: Initialize gh-pages if needed
         run: |
-          if [ ! -d "gh-pages/.git" ]; then
+          BRANCH=$(cd gh-pages 2>/dev/null && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "none")
+          if [ "$BRANCH" != "gh-pages" ]; then
+            rm -rf gh-pages
             mkdir -p gh-pages
             cd gh-pages
             git init
