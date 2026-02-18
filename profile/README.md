@@ -2,6 +2,8 @@
 
 Open-source digital signage players for [Xibo CMS](https://xibosignage.com).
 
+> **Note:** This is an independent open-source project and is **not affiliated with, endorsed by, or supported by [Xibo Signage Ltd](https://xibosignage.com)**. These are community-built players provided as-is, with no warranty. Use at your own risk.
+
 ## Players
 
 | Package | Platform | Description |
