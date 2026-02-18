@@ -336,15 +336,13 @@ jobs:
           UBUNTU_VER="${{ inputs.ubuntu-version || '24.04' }}"
           RELEASE_FILE="gh-pages/deb/ubuntu/${UBUNTU_VER}/Release"
 
-          # Import GPG key
-          echo "$GPG_KEY" | gpg --batch --import
-
-          # Configure gpg-agent for non-interactive signing
+          # Configure gpg-agent BEFORE first gpg command (agent starts lazily)
           mkdir -p ~/.gnupg
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
           echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
-          gpgconf --kill gpg-agent
-          gpg-connect-agent reloadagent /bye
+
+          # Import GPG key (agent starts with correct config)
+          echo "$GPG_KEY" | gpg --batch --import
 
           # Preset passphrase in gpg-agent for all key grips
           GPG_PRESET="$(gpgconf --list-dirs libexecdir)/gpg-preset-passphrase"
