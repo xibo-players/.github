@@ -352,6 +352,9 @@ jobs:
           # Import GPG key with loopback pinentry
           echo "$GPG_KEY" | base64 -d | gpg --batch --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" --import
 
+          # Remove stale signatures before re-signing
+          rm -f "${RELEASE_FILE}.gpg" "$(dirname ${RELEASE_FILE})/InRelease"
+
           # Create detached signature (Release.gpg)
           gpg --armor --detach-sign \
             --output "${RELEASE_FILE}.gpg" \
