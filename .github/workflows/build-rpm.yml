@@ -258,15 +258,14 @@ jobs:
           echo "$GPG_KEY" | gpg --batch --import
 
           # Create a gpg wrapper that adds non-interactive flags
-          # RPM 6.0 calls %{__gpg} directly with its own internal args
-          printf '#!/bin/bash\nexec /usr/bin/gpg --batch --pinentry-mode loopback --passphrase "%s" "$@"\n' "${GPG_PASSPHRASE:-}" > /usr/local/bin/gpg-rpm-sign
-          chmod 755 /usr/local/bin/gpg-rpm-sign
+          # RPM 6.0 validates %__gpg_sign_cmd: needs argc >= 2 and
+          # runs argv[0] --version checking for "GnuPG". Simplest fix:
+          # replace /usr/bin/gpg in this disposable container.
+          mv /usr/bin/gpg /usr/bin/gpg.real
+          printf '#!/bin/bash\nexec /usr/bin/gpg.real --batch --pinentry-mode loopback --passphrase "%s" "$@"\n' "${GPG_PASSPHRASE:-}" > /usr/bin/gpg
+          chmod 755 /usr/bin/gpg
 
-          # Configure rpmmacros to use our wrapper
-          # RPM 6.0: %__gpg_sign_cmd is the binary path (rpm adds args internally)
           echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
-          echo "%__gpg /usr/local/bin/gpg-rpm-sign" >> ~/.rpmmacros
-          echo "%__gpg_sign_cmd /usr/local/bin/gpg-rpm-sign" >> ~/.rpmmacros
 
           # Sign all RPMs
           for rpm in rpms/*.rpm; do
