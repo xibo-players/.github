@@ -1,3 +1,5 @@
+<img src="https://github.com/birkenfeld/arexibo/blob/master/assets/logo.png?raw=true" alt="Xibo Players" width="64">
+
 # Xibo Players
 
 Open-source digital signage players for [Xibo CMS](https://xibosignage.com).
