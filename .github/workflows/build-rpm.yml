@@ -226,8 +226,6 @@ jobs:
     name: Sign RPMs
     needs: build
     runs-on: ubuntu-latest
-    container:
-      image: fedora:${{ inputs.fedora-version || '43' }}
 
     steps:
       - name: Download all RPM artifacts
@@ -247,7 +245,7 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
           GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
         run: |
-          dnf install -y rpm-sign gnupg2 pinentry
+          sudo apt-get update && sudo apt-get install -y rpm
 
           # Import GPG private key
           # Secret must be base64-encoded: base64 -w0 < key.asc | gh secret set ...
@@ -259,6 +257,7 @@ jobs:
           gpgconf --kill gpg-agent || true
 
           # Override RPM signing macro to use passphrase-fd 3
+          # (Ubuntu's rpm package uses RPM 4.x which honors this macro)
           cat >> ~/.rpmmacros << MACROS
           %_gpg_name ${GPG_KEY_ID}
           %__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-fd 3 -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
@@ -267,7 +266,7 @@ jobs:
           # Sign all RPMs (pipe passphrase to fd 3)
           for rpm in rpms/*.rpm; do
             echo "Signing: $(basename $rpm)"
-            echo "$GPG_PASSPHRASE" | rpmsign --addsign "$rpm" 3<&0
+            echo "$GPG_PASSPHRASE" | rpm --addsign "$rpm" 3<&0
           done
 
           # Verify signatures
