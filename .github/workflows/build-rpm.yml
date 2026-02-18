@@ -327,10 +327,25 @@ jobs:
           name: ${{ inputs.package-name }}-rpm-signed
           path: dist/
 
+      - name: Generate release body
+        run: |
+          if [ -n "${{ inputs.release-body }}" ]; then
+            echo "${{ inputs.release-body }}" > /tmp/release-body.md
+          else
+            cat > /tmp/release-body.md << EOF
+          ## ${{ inputs.package-name }}
+
+          ### Installation
+          \`\`\`bash
+          sudo dnf install ./${{ inputs.package-name }}-*.rpm
+          \`\`\`
+          EOF
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
           name: "${{ inputs.package-name }} ${{ github.ref_name }}"
-          body: ${{ inputs.release-body || format('## {0}\n\n### Installation\n```bash\nsudo dnf install ./{0}-*.rpm\n```', inputs.package-name) }}
+          body_path: /tmp/release-body.md
           files: |
             dist/*.rpm
             dist/RPM-GPG-KEY-*

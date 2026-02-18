@@ -193,10 +193,26 @@ jobs:
           name: ${{ inputs.package-name }}-deb-signed
           path: dist/
 
+      - name: Generate release body
+        run: |
+          if [ -n "${{ inputs.release-body }}" ]; then
+            echo "${{ inputs.release-body }}" > /tmp/release-body.md
+          else
+            cat > /tmp/release-body.md << EOF
+          ## ${{ inputs.package-name }}
+
+          ### Installation
+          \`\`\`bash
+          sudo dpkg -i ${{ inputs.package-name }}_*.deb
+          sudo apt-get install -f
+          \`\`\`
+          EOF
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
           name: "${{ inputs.package-name }} ${{ github.ref_name }}"
-          body: ${{ inputs.release-body || format('## {0}\n\n### Installation\n```bash\nsudo dpkg -i {0}_*.deb\nsudo apt-get install -f\n```', inputs.package-name) }}
+          body_path: /tmp/release-body.md
           files: |
             dist/*.deb
             dist/DEB-GPG-KEY-*
