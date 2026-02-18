@@ -255,8 +255,8 @@ jobs:
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
 
           # Import GPG private key with loopback pinentry
-          # This ensures gpg-agent stores the key without re-protecting it
-          echo "$GPG_KEY" | gpg --batch --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE:-}" --import
+          # Use printf to avoid echo mangling PGP armor content
+          printf '%s' "$GPG_KEY" | gpg --batch --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" --import
 
           # Create a gpg wrapper for non-interactive signing
           # RPM 6.0 validates %__gpg_sign_cmd: needs argc >= 2 and
