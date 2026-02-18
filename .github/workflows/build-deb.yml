@@ -346,8 +346,8 @@ jobs:
           echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
           echo "passphrase-file /tmp/gpg-passphrase" >> ~/.gnupg/gpg.conf
 
-          # Import GPG key
-          echo "$GPG_KEY" | gpg --import
+          # Import GPG key with loopback pinentry
+          echo "$GPG_KEY" | gpg --batch --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE:-}" --import
 
           # Create detached signature (Release.gpg)
           gpg --armor --detach-sign \
