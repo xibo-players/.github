@@ -278,42 +278,47 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          name: "${{ inputs.package-name }} Kiosk ${{ github.ref_name }}"
-          body: |
-            ## ${{ inputs.package-name }} Kiosk Images
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          # Create release if it doesn't exist
+          gh release view "$TAG" --json tagName >/dev/null 2>&1 || \
+            gh release create "$TAG" \
+              --title "${PACKAGE} Kiosk ${TAG}" \
+              --notes "## ${PACKAGE} Kiosk Images
 
-            ### Installation Methods
+          ### Installation Methods
 
-            #### Installer ISO (Recommended)
-            Boot from USB and install automatically:
-            ```bash
-            sudo dd if=${{ inputs.package-name }}-kiosk-installer_*_x86_64.iso of=/dev/sdX bs=8M status=progress
-            ```
+          #### Installer ISO (Recommended)
+          Boot from USB and install automatically:
+          \`\`\`bash
+          sudo dd if=${PACKAGE}-kiosk-installer_*_x86_64.iso of=/dev/sdX bs=8M status=progress
+          \`\`\`
 
-            #### Disk Images
-            - **QCOW2** (x86_64): For GNOME Boxes, virt-manager, QEMU
-            - **Raw.xz** (x86_64/aarch64): For Balena Etcher or dd
+          #### Disk Images
+          - **QCOW2** (x86_64): For GNOME Boxes, virt-manager, QEMU
+          - **Raw.xz** (x86_64/aarch64): For Balena Etcher or dd
 
-            ```bash
-            xz -dc ${{ inputs.package-name }}-kiosk_*_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
-            ```
+          \`\`\`bash
+          xz -dc ${PACKAGE}-kiosk_*_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
+          \`\`\`
 
-            ### Default Credentials
-            - User: `xibo` / Password: `xibo`
-            - Root: `root` (locked by default)
+          ### Default Credentials
+          - User: \`xibo\` / Password: \`xibo\`
+          - Root: \`root\` (locked by default)
 
-            ⚠️ **Change passwords after first login!**
+          > **Change passwords after first login!**
 
-            ### Verification
-            ```bash
-            sha256sum -c SHA256SUMS
-            ```
-          files: |
-            release/*
-          draft: false
-          prerelease: false
+          ### Verification
+          \`\`\`bash
+          sha256sum -c SHA256SUMS
+          \`\`\`"
+
+          # Upload all artifacts (--clobber overwrites existing)
+          gh release upload "$TAG" release/* --clobber
 
   publish-iso:
     name: Publish to gh-pages
