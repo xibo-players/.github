@@ -246,6 +246,7 @@ jobs:
           GPG_KEY: ${{ secrets.RPM_GPG_KEY }}
           GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
           GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
+        shell: bash
         run: |
           dnf install -y rpm-sign gnupg2 pinentry
 
@@ -253,29 +254,49 @@ jobs:
           # Secret must be base64-encoded: base64 -w0 < key.asc | gh secret set ...
           echo "$GPG_KEY" | base64 -d | gpg --batch --import
 
-          # Configure GPG for non-interactive signing
+          # Create a custom pinentry that serves the passphrase non-interactively.
+          # RPM 6.0 (Fedora 43) ignores %__gpg_sign_cmd macro overrides and
+          # invokes gpg which starts gpg-agent which calls pinentry. In a CI
+          # container there's no /dev/tty, so we replace pinentry with a script.
+          echo "$GPG_PASSPHRASE" > /tmp/.gpg-passphrase
+          chmod 600 /tmp/.gpg-passphrase
+          cat > /usr/local/bin/pinentry-ci << 'PINENTRY'
+          #!/bin/bash
+          echo "OK Pleased to meet you"
+          while IFS= read -r cmd; do
+            case "${cmd%%\ *}" in
+              GETPIN)
+                echo "D $(cat /tmp/.gpg-passphrase)"
+                echo "OK"
+                ;;
+              BYE)
+                echo "OK closing connection"
+                exit 0
+                ;;
+              *)
+                echo "OK"
+                ;;
+            esac
+          done
+          PINENTRY
+          chmod 755 /usr/local/bin/pinentry-ci
+
+          # Configure gpg-agent to use our custom pinentry
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
-          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
-
-          # Pre-cache passphrase in gpg-agent so rpm --addsign works
+          echo "pinentry-program /usr/local/bin/pinentry-ci" >> ~/.gnupg/gpg-agent.conf
           gpgconf --kill gpg-agent || true
-          gpg-agent --daemon --allow-preset-passphrase || true
-          KEYGRIP=$(gpg --list-secret-keys --with-keygrip 2>/dev/null | grep -A1 '\[S\]' | grep Keygrip | awk '{print $3}')
-          if [ -z "$KEYGRIP" ]; then
-            KEYGRIP=$(gpg --list-secret-keys --with-keygrip 2>/dev/null | grep Keygrip | head -1 | awk '{print $3}')
-          fi
-          echo "Using keygrip: $KEYGRIP"
-          echo "$GPG_PASSPHRASE" | /usr/libexec/gpg-preset-passphrase --preset "$KEYGRIP"
 
           echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
 
-          # Sign all RPMs (gpg-agent has cached passphrase)
-          for rpm in rpms/*.rpm; do
-            echo "Signing: $(basename $rpm)"
-            rpm --addsign "$rpm"
+          # Sign all RPMs
+          for rpm_file in rpms/*.rpm; do
+            echo "Signing: $(basename $rpm_file)"
+            rpm --addsign "$rpm_file"
           done
+
+          # Clean up passphrase
+          rm -f /tmp/.gpg-passphrase
 
           # Verify signatures
           echo "Verifying signatures..."
