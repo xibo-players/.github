@@ -249,25 +249,29 @@ jobs:
         run: |
           dnf install -y rpm-sign gnupg2 pinentry
 
-          # Configure gpg for non-interactive signing via passphrase-file
+          # Configure gpg for non-interactive signing
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-          echo "${GPG_PASSPHRASE:-}" > /tmp/gpg-passphrase
-          chmod 600 /tmp/gpg-passphrase
-          echo "batch" > ~/.gnupg/gpg.conf
-          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
-          echo "passphrase-file /tmp/gpg-passphrase" >> ~/.gnupg/gpg.conf
 
           # Import GPG private key
-          echo "$GPG_KEY" | gpg --import
+          echo "$GPG_KEY" | gpg --batch --import
+
+          # Debug: show rpm macro values
+          echo "==> __gpg = $(rpm --eval '%{__gpg}')"
+          echo "==> __gpg_sign_cmd = $(rpm --eval '%{__gpg_sign_cmd}')"
+          echo "==> GPG version: $(gpg --version | head -1)"
+
+          # Write passphrase file and configure rpmmacros
+          echo "${GPG_PASSPHRASE:-}" > /tmp/gpg-passphrase
+          chmod 600 /tmp/gpg-passphrase
+          echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
+          echo "%__gpg_sign_cmd %{__gpg} gpg --batch --no-verbose --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-file /tmp/gpg-passphrase -u \"%{_gpg_name}\" -sbo %{__signature_filename} %{__plaintext_filename}" >> ~/.rpmmacros
 
           # Sign all RPMs
           for rpm in rpms/*.rpm; do
             echo "Signing: $(basename $rpm)"
-            rpmsign --define "_gpg_name ${GPG_KEY_ID}" \
-                    --define "_gpg_path ~/.gnupg" \
-                    --addsign "$rpm"
+            rpm --addsign "$rpm"
           done
 
           rm -f /tmp/gpg-passphrase
