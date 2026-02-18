@@ -264,15 +264,22 @@ jobs:
           echo "${GPG_PASSPHRASE:-}" > /tmp/gpg-passphrase
           chmod 600 /tmp/gpg-passphrase
           mv /usr/bin/gpg /usr/bin/gpg.real
-          printf '#!/bin/bash\nexec /usr/bin/gpg.real --batch --no-tty --pinentry-mode loopback --passphrase-file /tmp/gpg-passphrase "$@"\n' > /usr/bin/gpg
+          printf '#!/bin/bash\necho "GPG ARGS: $*" >&2\nexec /usr/bin/gpg.real --batch --no-tty --pinentry-mode loopback --passphrase-file /tmp/gpg-passphrase "$@"\n' > /usr/bin/gpg
           chmod 755 /usr/bin/gpg
 
           echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
 
+          # Debug: show wrapper content and test it
+          echo "=== GPG wrapper ==="
+          cat /usr/bin/gpg
+          echo "=== Testing wrapper directly ==="
+          echo "test" | /usr/bin/gpg --clearsign 2>&1 || true
+          echo "=== End test ==="
+
           # Sign all RPMs
           for rpm in rpms/*.rpm; do
             echo "Signing: $(basename $rpm)"
-            rpmsign --addsign "$rpm"
+            rpmsign --addsign "$rpm" 2>&1 || true
           done
 
           # Verify signatures
