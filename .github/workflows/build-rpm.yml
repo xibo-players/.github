@@ -249,25 +249,25 @@ jobs:
         run: |
           dnf install -y rpm-sign gnupg2 pinentry
 
-          # Configure gpg for non-interactive signing
+          # Configure gpg for non-interactive signing via passphrase-file
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "${GPG_PASSPHRASE:-}" > /tmp/gpg-passphrase
+          chmod 600 /tmp/gpg-passphrase
+          echo "batch" > ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          echo "passphrase-file /tmp/gpg-passphrase" >> ~/.gnupg/gpg.conf
 
           # Import GPG private key
           # Secret must be base64-encoded: base64 -w0 < key.asc | gh secret set ...
-          echo "$GPG_KEY" | base64 -d | gpg --batch --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" --import
+          echo "$GPG_KEY" | base64 -d | gpg --import
 
-          # Create a gpg wrapper for non-interactive signing
-          # RPM 6.0 validates %__gpg_sign_cmd: needs argc >= 2 and
-          # runs argv[0] --version checking for "GnuPG". Simplest fix:
-          # replace /usr/bin/gpg in this disposable container.
-          # Use --passphrase-fd (not --passphrase "") because GPG 2.4
-          # treats empty --passphrase as "no passphrase given".
-          echo "${GPG_PASSPHRASE:-}" > /tmp/gpg-passphrase
-          chmod 600 /tmp/gpg-passphrase
+          # RPM 6.0 validates %__gpg_sign_cmd: runs argv[0] --version
+          # checking for "GnuPG". Replace /usr/bin/gpg in this disposable
+          # container so rpmsign finds a working gpg that reads gpg.conf.
           mv /usr/bin/gpg /usr/bin/gpg.real
-          printf '#!/bin/bash\nexec /usr/bin/gpg.real --batch --no-tty --pinentry-mode loopback --passphrase-fd 3 "$@" 3< /tmp/gpg-passphrase\n' > /usr/bin/gpg
+          printf '#!/bin/bash\nexec /usr/bin/gpg.real "$@"\n' > /usr/bin/gpg
           chmod 755 /usr/bin/gpg
 
           echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
