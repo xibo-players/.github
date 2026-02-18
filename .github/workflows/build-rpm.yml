@@ -260,13 +260,6 @@ jobs:
           # container there's no /dev/tty, so we replace pinentry with a script.
           printf '%s' "$GPG_PASSPHRASE" > /tmp/.gpg-passphrase
           chmod 600 /tmp/.gpg-passphrase
-
-          # Debug: test passphrase directly with gpg before rpm
-          echo "Passphrase length: ${#GPG_PASSPHRASE}"
-          echo "test" | gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --default-key "$GPG_KEY_ID" --clearsign > /dev/null 2>&1 \
-            && echo "Direct gpg signing: OK" \
-            || echo "Direct gpg signing: FAILED"
-
           cat > /usr/local/bin/pinentry-ci << 'PINENTRY'
           #!/bin/bash
           echo "OK Pleased to meet you"
