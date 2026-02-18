@@ -342,19 +342,23 @@ jobs:
           # Configure gpg-agent for non-interactive signing
           mkdir -p ~/.gnupg
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-          gpgconf --kill gpg-agent || true
+          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
+          gpgconf --kill gpg-agent
+          gpg-connect-agent reloadagent /bye
+
+          # Preset passphrase in gpg-agent for all key grips
+          GPG_PRESET="$(gpgconf --list-dirs libexecdir)/gpg-preset-passphrase"
+          for keygrip in $(gpg --with-keygrip --list-secret-keys | grep Keygrip | awk '{print $3}'); do
+            "$GPG_PRESET" --preset --passphrase "${GPG_PASSPHRASE:-}" "$keygrip"
+          done
 
           # Create detached signature (Release.gpg)
-          gpg --batch --pinentry-mode loopback \
-            --passphrase "$GPG_PASSPHRASE" \
-            --armor --detach-sign \
+          gpg --armor --detach-sign \
             --output "${RELEASE_FILE}.gpg" \
             "${RELEASE_FILE}"
 
           # Create inline signature (InRelease)
-          gpg --batch --pinentry-mode loopback \
-            --passphrase "$GPG_PASSPHRASE" \
-            --armor --clearsign \
+          gpg --armor --clearsign \
             --output "$(dirname ${RELEASE_FILE})/InRelease" \
             "${RELEASE_FILE}"
 

@@ -255,16 +255,22 @@ jobs:
           # Configure gpg-agent for non-interactive signing
           mkdir -p ~/.gnupg
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
           gpgconf --kill gpg-agent
+          gpg-connect-agent reloadagent /bye
 
-          # Configure rpmmacros for signing (no leading whitespace allowed)
-          echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
-          echo '%__gpg_sign_cmd %{__gpg} --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-fd 3 -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}' >> ~/.rpmmacros
+          # Preset passphrase in gpg-agent for all key grips
+          GPG_PRESET="$(gpgconf --list-dirs libexecdir)/gpg-preset-passphrase"
+          for keygrip in $(gpg --with-keygrip --list-secret-keys | grep Keygrip | awk '{print $3}'); do
+            "$GPG_PRESET" --preset --passphrase "${GPG_PASSPHRASE:-}" "$keygrip"
+          done
 
-          # Sign all RPMs
+          # Sign all RPMs (gpg-agent has cached passphrase)
           for rpm in rpms/*.rpm; do
             echo "Signing: $(basename $rpm)"
-            echo "$GPG_PASSPHRASE" | rpm --addsign "$rpm" 3<&0
+            rpmsign --define "_gpg_name ${GPG_KEY_ID}" \
+                    --define "_gpg_path ~/.gnupg" \
+                    --addsign "$rpm"
           done
 
           # Verify signatures
