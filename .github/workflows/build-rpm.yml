@@ -257,24 +257,20 @@ jobs:
           # Import GPG private key
           echo "$GPG_KEY" | gpg --batch --import
 
-          # Debug: show rpm macro values
-          echo "==> __gpg = $(rpm --eval '%{__gpg}')"
-          echo "==> __gpg_sign_cmd = $(rpm --eval '%{__gpg_sign_cmd}')"
-          echo "==> GPG version: $(gpg --version | head -1)"
+          # Create a gpg wrapper that adds non-interactive flags
+          # RPM 6.0 calls %{__gpg} directly with its own internal args
+          printf '#!/bin/bash\nexec /usr/bin/gpg --batch --pinentry-mode loopback --passphrase "%s" "$@"\n' "${GPG_PASSPHRASE:-}" > /usr/local/bin/gpg-rpm-sign
+          chmod 755 /usr/local/bin/gpg-rpm-sign
 
-          # Write passphrase file and configure rpmmacros
-          echo "${GPG_PASSPHRASE:-}" > /tmp/gpg-passphrase
-          chmod 600 /tmp/gpg-passphrase
+          # Configure rpmmacros to use our wrapper
           echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
-          echo "%__gpg_sign_cmd %{__gpg} gpg --batch --no-verbose --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-file /tmp/gpg-passphrase -u \"%{_gpg_name}\" -sbo %{__signature_filename} %{__plaintext_filename}" >> ~/.rpmmacros
+          echo "%__gpg /usr/local/bin/gpg-rpm-sign" >> ~/.rpmmacros
 
           # Sign all RPMs
           for rpm in rpms/*.rpm; do
             echo "Signing: $(basename $rpm)"
-            rpm --addsign "$rpm"
+            rpmsign --addsign "$rpm"
           done
-
-          rm -f /tmp/gpg-passphrase
 
           # Verify signatures
           echo "Verifying signatures..."
