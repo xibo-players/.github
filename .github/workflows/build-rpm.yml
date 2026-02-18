@@ -249,33 +249,25 @@ jobs:
         run: |
           dnf install -y rpm-sign gnupg2 pinentry
 
-          # Configure gpg for non-interactive signing via passphrase-file
-          mkdir -p ~/.gnupg
-          chmod 700 ~/.gnupg
-          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-          echo "${GPG_PASSPHRASE:-}" > /tmp/gpg-passphrase
-          chmod 600 /tmp/gpg-passphrase
-          echo "batch" > ~/.gnupg/gpg.conf
-          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
-          echo "passphrase-file /tmp/gpg-passphrase" >> ~/.gnupg/gpg.conf
-
           # Import GPG private key
           # Secret must be base64-encoded: base64 -w0 < key.asc | gh secret set ...
-          echo "$GPG_KEY" | base64 -d | gpg --import
+          echo "$GPG_KEY" | base64 -d | gpg --batch --import
 
-          # RPM 6.0 validates %__gpg_sign_cmd: runs argv[0] --version
-          # checking for "GnuPG". Replace /usr/bin/gpg in this disposable
-          # container so rpmsign finds a working gpg that reads gpg.conf.
-          mv /usr/bin/gpg /usr/bin/gpg.real
-          printf '#!/bin/bash\nexec /usr/bin/gpg.real "$@"\n' > /usr/bin/gpg
-          chmod 755 /usr/bin/gpg
+          # Configure GPG for non-interactive use
+          mkdir -p ~/.gnupg
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          gpgconf --kill gpg-agent || true
 
-          echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
+          # Override RPM signing macro to use passphrase-fd 3
+          cat >> ~/.rpmmacros << MACROS
+          %_gpg_name ${GPG_KEY_ID}
+          %__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-fd 3 -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
+          MACROS
 
-          # Sign all RPMs
+          # Sign all RPMs (pipe passphrase to fd 3)
           for rpm in rpms/*.rpm; do
             echo "Signing: $(basename $rpm)"
-            rpmsign --addsign "$rpm"
+            echo "$GPG_PASSPHRASE" | rpmsign --addsign "$rpm" 3<&0
           done
 
           # Verify signatures
