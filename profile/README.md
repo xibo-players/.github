@@ -9,8 +9,8 @@ Open-source digital signage players for [Xibo CMS](https://xibosignage.com).
 | Package | Platform | Description |
 |---------|----------|-------------|
 | [xibo-kiosk](https://github.com/xibo-players/xibo-kiosk) | Fedora / Ubuntu | GNOME Kiosk session with auto-login, registration wizard, and health monitoring |
-| [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron) | Fedora | Electron-based player with offline support and service worker caching |
-| [xiboplayer-chromium](https://github.com/xibo-players/xiboplayer-chromium) | Fedora | Chromium kiosk wrapper for the PWA player |
+| [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron) | Fedora / Ubuntu | Electron-based player with offline support and service worker caching |
+| [xiboplayer-chromium](https://github.com/xibo-players/xiboplayer-chromium) | Fedora / Ubuntu | Chromium kiosk wrapper for the PWA player |
 | [arexibo](https://github.com/xibo-players/arexibo) | Fedora / Ubuntu | Native Rust player with Qt6 WebEngine (x86_64 + aarch64) |
 
 ## Quick install
