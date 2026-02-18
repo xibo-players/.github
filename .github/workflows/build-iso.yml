@@ -155,8 +155,12 @@ jobs:
       - name: Prepare mkosi configuration
         run: |
           if [ -f "${{ inputs.mkosi-config }}" ]; then
-            cp "${{ inputs.mkosi-config }}" mkosi.conf
+            echo "Using provided mkosi configuration"
+            if [ "${{ inputs.mkosi-config }}" != "mkosi.conf" ]; then
+              cp "${{ inputs.mkosi-config }}" mkosi.conf
+            fi
           else
+            echo "Using template mkosi configuration"
             cp scripts/mkosi/mkosi.conf.template mkosi.conf
             sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}-kiosk/" mkosi.conf
           fi
