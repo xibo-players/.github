@@ -258,8 +258,15 @@ jobs:
           # RPM 6.0 (Fedora 43) ignores %__gpg_sign_cmd macro overrides and
           # invokes gpg which starts gpg-agent which calls pinentry. In a CI
           # container there's no /dev/tty, so we replace pinentry with a script.
-          echo "$GPG_PASSPHRASE" > /tmp/.gpg-passphrase
+          printf '%s' "$GPG_PASSPHRASE" > /tmp/.gpg-passphrase
           chmod 600 /tmp/.gpg-passphrase
+
+          # Debug: test passphrase directly with gpg before rpm
+          echo "Passphrase length: ${#GPG_PASSPHRASE}"
+          echo "test" | gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --default-key "$GPG_KEY_ID" --clearsign > /dev/null 2>&1 \
+            && echo "Direct gpg signing: OK" \
+            || echo "Direct gpg signing: FAILED"
+
           cat > /usr/local/bin/pinentry-ci << 'PINENTRY'
           #!/bin/bash
           echo "OK Pleased to meet you"
