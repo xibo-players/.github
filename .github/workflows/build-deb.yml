@@ -329,23 +329,31 @@ jobs:
 
       - name: GPG-sign Release file
         if: inputs.gpg-sign
+        env:
+          GPG_KEY: ${{ secrets.DEB_GPG_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.DEB_GPG_PASSPHRASE }}
         run: |
           UBUNTU_VER="${{ inputs.ubuntu-version || '24.04' }}"
           RELEASE_FILE="gh-pages/deb/ubuntu/${UBUNTU_VER}/Release"
 
           # Import GPG key
-          echo "${{ secrets.DEB_GPG_KEY }}" | gpg --batch --import
+          echo "$GPG_KEY" | gpg --batch --import
+
+          # Configure gpg-agent for non-interactive signing
+          mkdir -p ~/.gnupg
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          gpgconf --kill gpg-agent || true
 
           # Create detached signature (Release.gpg)
           gpg --batch --pinentry-mode loopback \
-            --passphrase "${{ secrets.DEB_GPG_PASSPHRASE }}" \
+            --passphrase "$GPG_PASSPHRASE" \
             --armor --detach-sign \
             --output "${RELEASE_FILE}.gpg" \
             "${RELEASE_FILE}"
 
           # Create inline signature (InRelease)
           gpg --batch --pinentry-mode loopback \
-            --passphrase "${{ secrets.DEB_GPG_PASSPHRASE }}" \
+            --passphrase "$GPG_PASSPHRASE" \
             --armor --clearsign \
             --output "$(dirname ${RELEASE_FILE})/InRelease" \
             "${RELEASE_FILE}"

@@ -259,7 +259,7 @@ jobs:
 
           # Configure rpmmacros for signing (no leading whitespace allowed)
           echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
-          echo '%__gpg_sign_cmd %{__gpg} gpg --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-fd 3 -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}' >> ~/.rpmmacros
+          echo '%__gpg_sign_cmd %{__gpg} --batch --no-armor --no-secmem-warning --pinentry-mode loopback --passphrase-fd 3 -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}' >> ~/.rpmmacros
 
           # Sign all RPMs
           for rpm in rpms/*.rpm; do
