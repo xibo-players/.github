@@ -438,22 +438,25 @@ jobs:
           fi
 
           # --- Step 3: Merge all repos' repodata into unified repo ---
+          WORKDIR="$(pwd)"
           for arch in x86_64 aarch64 noarch; do
-            output="pages/rpm/fedora/${FEDORA_VER}/${arch}"
+            output="${WORKDIR}/pages/rpm/fedora/${FEDORA_VER}/${arch}"
             mkdir -p "${output}"
 
-            # Collect all repos that have repodata for this arch
+            # Collect all repos that have repodata for this arch (absolute paths)
             repos=()
-            for repo_dir in pages/_repos/*/rpm/fedora/${FEDORA_VER}/${arch}; do
+            for repo_dir in "${WORKDIR}"/pages/_repos/*/rpm/fedora/${FEDORA_VER}/${arch}; do
               if [ -d "${repo_dir}/repodata" ]; then
                 repos+=("--repo" "${repo_dir}")
               fi
             done
 
-            if [ ${#repos[@]} -gt 0 ]; then
-              echo "Merging ${arch}: ${#repos[@]} repos → ${output}"
+            repo_count=$(( ${#repos[@]} / 2 ))
+            if [ ${repo_count} -gt 0 ]; then
+              echo "Merging ${arch}: ${repo_count} repo(s) → ${output}"
               rm -rf "${output}/repodata"
-              mergerepo_c "${repos[@]}" -o "${output}"
+              mergerepo_c "${repos[@]}" -o "${output}" || echo "WARNING: mergerepo_c failed for ${arch}"
+              ls -la "${output}/repodata/" 2>/dev/null || echo "WARNING: No repodata created for ${arch}"
             fi
           done
 
@@ -461,6 +464,8 @@ jobs:
           find pages/rpm/fedora/ -name 'repomd.xml' 2>/dev/null
 
       - name: Push to central repo
+        env:
+          PAGES_TOKEN: ${{ secrets.PAGES_TOKEN }}
         run: |
           cd pages
           git config user.name "github-actions[bot]"
@@ -474,9 +479,11 @@ jobs:
 
           git commit -m "Update RPM: ${{ inputs.package-name }}"
 
+          REMOTE_URL="https://x-access-token:${PAGES_TOKEN}@github.com/xibo-players/xibo-players.github.io.git"
+
           # Retry push with rebase to handle concurrent updates from other repos
           for i in 1 2 3; do
-            git push && break
+            git push "$REMOTE_URL" main && break
             echo "Push failed (attempt $i), rebasing..."
-            git pull --rebase
+            git pull --rebase "$REMOTE_URL" main
           done

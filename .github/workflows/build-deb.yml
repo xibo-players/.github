@@ -379,6 +379,8 @@ jobs:
           ls -lh "$(dirname ${RELEASE_FILE})"/Release* "$(dirname ${RELEASE_FILE})"/InRelease
 
       - name: Push to central repo
+        env:
+          PAGES_TOKEN: ${{ secrets.PAGES_TOKEN }}
         run: |
           cd pages
           git config user.name "github-actions[bot]"
@@ -392,9 +394,11 @@ jobs:
 
           git commit -m "Update DEB: ${{ inputs.package-name }}"
 
+          REMOTE_URL="https://x-access-token:${PAGES_TOKEN}@github.com/xibo-players/xibo-players.github.io.git"
+
           # Retry push with rebase to handle concurrent updates from other repos
           for i in 1 2 3; do
-            git push && break
+            git push "$REMOTE_URL" main && break
             echo "Push failed (attempt $i), rebasing..."
-            git pull --rebase
+            git pull --rebase "$REMOTE_URL" main
           done
