@@ -263,8 +263,10 @@ jobs:
           chmod 755 /usr/local/bin/gpg-rpm-sign
 
           # Configure rpmmacros to use our wrapper
+          # RPM 6.0: %__gpg_sign_cmd is the binary path (rpm adds args internally)
           echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
           echo "%__gpg /usr/local/bin/gpg-rpm-sign" >> ~/.rpmmacros
+          echo "%__gpg_sign_cmd /usr/local/bin/gpg-rpm-sign" >> ~/.rpmmacros
 
           # Sign all RPMs
           for rpm in rpms/*.rpm; do
