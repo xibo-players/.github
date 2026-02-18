@@ -173,7 +173,7 @@ jobs:
           echo "$GPG_KEY" | base64 -d | gpg --batch --import
 
           # Export public key for repository consumers
-          # (APT repo signing is done in publish-deb via Release.gpg/InRelease)
+          # (APT repo signing is done in update-repos.yml via Release.gpg/InRelease)
           gpg --armor --export > debs/DEB-GPG-KEY-${{ inputs.package-name }}.asc
 
       - uses: actions/upload-artifact@v4
@@ -222,183 +222,20 @@ jobs:
           draft: false
           prerelease: false
 
-  publish-deb:
-    name: Publish to central apt repo
-    needs: sign
-    if: inputs.publish-to-repo
+  notify:
+    name: Trigger repository update
+    needs: release
+    if: inputs.publish-to-repo && needs.release.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ inputs.package-name }}-deb-signed
-          path: debs/
-
-      - name: Install apt repository tools
-        run: sudo apt-get update && sudo apt-get install -y dpkg-dev gnupg2
-
-      - name: Checkout central pages repo
-        uses: actions/checkout@v4
-        with:
-          repository: xibo-players/xibo-players.github.io
-          token: ${{ secrets.PAGES_TOKEN }}
-          path: pages
-          fetch-depth: 1
-
-      - name: Publish DEBs to central repo
-        run: |
-          UBUNTU_VER="${{ inputs.ubuntu-version || '24.04' }}"
-          REPO_BASE="pages/deb/ubuntu/${UBUNTU_VER}"
-          PKG="${{ inputs.package-name }}"
-
-          # Ensure arch directories exist
-          for arch in amd64 arm64 all; do
-            mkdir -p "${REPO_BASE}/${arch}"
-          done
-
-          # Remove old versions of THIS package (keep other packages intact)
-          for arch in amd64 arm64 all; do
-            rm -f "${REPO_BASE}/${arch}/${PKG}_"*.deb
-          done
-
-          # Copy new DEBs to the correct arch directories
-          for deb in debs/*.deb; do
-            [ -f "$deb" ] || continue
-            ARCH=$(dpkg-deb -f "$deb" Architecture)
-            case "$ARCH" in
-              amd64)
-                echo "  amd64: $(basename $deb)"
-                cp "$deb" "${REPO_BASE}/amd64/"
-                ;;
-              arm64)
-                echo "  arm64: $(basename $deb)"
-                cp "$deb" "${REPO_BASE}/arm64/"
-                ;;
-              all)
-                echo "  all: $(basename $deb)"
-                cp "$deb" "${REPO_BASE}/amd64/"
-                cp "$deb" "${REPO_BASE}/arm64/"
-                cp "$deb" "${REPO_BASE}/all/"
-                ;;
-            esac
-          done
-
-          # Copy GPG public key if it exists
-          if [ -f "debs/DEB-GPG-KEY-${PKG}.asc" ]; then
-            cp "debs/DEB-GPG-KEY-${PKG}.asc" pages/deb/
-          fi
-
-          # Rebuild Packages index for each arch (covers ALL packages from all repos)
-          echo "Rebuilding APT repository metadata..."
-          for arch in amd64 arm64 all; do
-            arch_dir="${REPO_BASE}/${arch}"
-            shopt -s nullglob
-            deb_files=("${arch_dir}"/*.deb)
-            shopt -u nullglob
-            if [ ${#deb_files[@]} -gt 0 ]; then
-              echo "  ${arch}: ${#deb_files[@]} packages"
-              cd "${arch_dir}"
-              dpkg-scanpackages . /dev/null > Packages
-              gzip -9c Packages > Packages.gz
-              cd "${GITHUB_WORKSPACE}"
-            fi
-          done
-
-          # Generate Release file with checksums
-          cd "${REPO_BASE}"
-          {
-            echo "Origin: xibo-players"
-            echo "Label: Xibo Players"
-            echo "Suite: stable"
-            echo "Codename: noble"
-            echo "Architectures: amd64 arm64 all"
-            echo "Components: main"
-            echo "Date: $(date -Ru)"
-            echo "MD5Sum:"
-            for f in */Packages */Packages.gz; do
-              [ -f "$f" ] || continue
-              echo " $(md5sum "$f" | cut -d' ' -f1) $(wc -c < "$f") $f"
-            done
-            echo "SHA1:"
-            for f in */Packages */Packages.gz; do
-              [ -f "$f" ] || continue
-              echo " $(sha1sum "$f" | cut -d' ' -f1) $(wc -c < "$f") $f"
-            done
-            echo "SHA256:"
-            for f in */Packages */Packages.gz; do
-              [ -f "$f" ] || continue
-              echo " $(sha256sum "$f" | cut -d' ' -f1) $(wc -c < "$f") $f"
-            done
-          } > Release
-          cd "${GITHUB_WORKSPACE}"
-
-          echo "Repository contents:"
-          for arch in amd64 arm64 all; do
-            echo "  ${arch}:"
-            ls "${REPO_BASE}/${arch}/"*.deb 2>/dev/null | xargs -I{} basename {} || echo "    (empty)"
-          done
-
-      - name: GPG-sign Release file
-        if: inputs.gpg-sign
+      - name: Trigger update-repos on central pages repo
         env:
-          GPG_KEY: ${{ secrets.DEB_GPG_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.DEB_GPG_PASSPHRASE }}
+          GH_TOKEN: ${{ secrets.PAGES_TOKEN }}
         run: |
-          UBUNTU_VER="${{ inputs.ubuntu-version || '24.04' }}"
-          RELEASE_FILE="pages/deb/ubuntu/${UBUNTU_VER}/Release"
-
-          # Configure gpg for non-interactive signing via passphrase-file
-          mkdir -p ~/.gnupg
-          chmod 700 ~/.gnupg
-          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-          echo "${GPG_PASSPHRASE:-}" > /tmp/gpg-passphrase
-          chmod 600 /tmp/gpg-passphrase
-          echo "batch" > ~/.gnupg/gpg.conf
-          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
-          echo "passphrase-file /tmp/gpg-passphrase" >> ~/.gnupg/gpg.conf
-
-          # Import GPG key with loopback pinentry
-          echo "$GPG_KEY" | base64 -d | gpg --batch --pinentry-mode loopback --passphrase "${GPG_PASSPHRASE}" --import
-
-          # Remove stale signatures before re-signing
-          rm -f "${RELEASE_FILE}.gpg" "$(dirname ${RELEASE_FILE})/InRelease"
-
-          # Create detached signature (Release.gpg)
-          gpg --armor --detach-sign \
-            --output "${RELEASE_FILE}.gpg" \
-            "${RELEASE_FILE}"
-
-          # Create inline signature (InRelease)
-          gpg --armor --clearsign \
-            --output "$(dirname ${RELEASE_FILE})/InRelease" \
-            "${RELEASE_FILE}"
-
-          rm -f /tmp/gpg-passphrase
-
-          echo "Signed Release files:"
-          ls -lh "$(dirname ${RELEASE_FILE})"/Release* "$(dirname ${RELEASE_FILE})"/InRelease
-
-      - name: Push to central repo
-        env:
-          PAGES_TOKEN: ${{ secrets.PAGES_TOKEN }}
-        run: |
-          cd pages
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
-
-          git commit -m "Update DEB: ${{ inputs.package-name }}"
-
-          REMOTE_URL="https://x-access-token:${PAGES_TOKEN}@github.com/xibo-players/xibo-players.github.io.git"
-
-          # Retry push with rebase to handle concurrent updates from other repos
-          for i in 1 2 3; do
-            git push "$REMOTE_URL" main && break
-            echo "Push failed (attempt $i), rebasing..."
-            git pull --rebase "$REMOTE_URL" main
-          done
+          curl -sf -X POST \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/xibo-players/xibo-players.github.io/dispatches" \
+            -d '{"event_type": "update-repos", "client_payload": {"package": "${{ inputs.package-name }}", "repo": "${{ github.repository }}", "tag": "${{ github.ref_name }}"}}'
+          echo "Triggered update-repos for ${{ inputs.package-name }}"

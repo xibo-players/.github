@@ -353,135 +353,20 @@ jobs:
           draft: false
           prerelease: false
 
-  publish-rpm:
-    name: Publish to central dnf repo
-    needs: sign
-    if: inputs.publish-to-repo
+  notify:
+    name: Trigger repository update
+    needs: release
+    if: inputs.publish-to-repo && needs.release.result == 'success'
     runs-on: ubuntu-latest
-    container:
-      image: fedora:${{ inputs.fedora-version || '43' }}
 
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ inputs.package-name }}-rpm-signed
-          path: rpms/
-
-      - name: Install tools
-        run: dnf install -y createrepo_c git
-
-      - name: Checkout central pages repo
-        uses: actions/checkout@v4
-        with:
-          repository: xibo-players/xibo-players.github.io
-          token: ${{ secrets.PAGES_TOKEN }}
-          path: pages
-          fetch-depth: 1
-
-      - name: Generate per-repo repodata and merge
-        shell: bash
-        run: |
-          FEDORA_VER="${{ inputs.fedora-version || '43' }}"
-          PKG="${{ inputs.package-name }}"
-
-          # Determine the release download URL for this repo's RPMs
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            RELEASE_TAG="${{ github.ref_name }}"
-          else
-            RELEASE_TAG="latest"
-          fi
-          BASEURL="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}"
-          echo "Package baseurl: ${BASEURL}"
-
-          # --- Step 1: Generate this repo's repodata (per-arch) ---
-          for arch in x86_64 aarch64 noarch; do
-            mkdir -p "/tmp/pkg-${arch}"
-          done
-
-          # Distribute RPMs to temp arch dirs
-          for rpm in rpms/*.rpm; do
-            [ -f "$rpm" ] || continue
-            case "$rpm" in
-              *.x86_64.rpm)  cp "$rpm" /tmp/pkg-x86_64/ ;;
-              *.aarch64.rpm) cp "$rpm" /tmp/pkg-aarch64/ ;;
-              *.noarch.rpm)
-                cp "$rpm" /tmp/pkg-x86_64/
-                cp "$rpm" /tmp/pkg-aarch64/
-                cp "$rpm" /tmp/pkg-noarch/
-                ;;
-            esac
-          done
-
-          # Generate repodata with baseurl pointing to GitHub Releases
-          for arch in x86_64 aarch64 noarch; do
-            if ls /tmp/pkg-${arch}/*.rpm &>/dev/null; then
-              createrepo_c --baseurl "${BASEURL}" /tmp/pkg-${arch}/
-            fi
-          done
-
-          # --- Step 2: Save this repo's repodata to central repo ---
-          for arch in x86_64 aarch64 noarch; do
-            target="pages/_repos/${PKG}/rpm/fedora/${FEDORA_VER}/${arch}"
-            rm -rf "${target}"
-            if [ -d "/tmp/pkg-${arch}/repodata" ]; then
-              mkdir -p "${target}"
-              cp -r /tmp/pkg-${arch}/repodata "${target}/"
-            fi
-          done
-
-          # Copy GPG public key
-          if [ -f "rpms/RPM-GPG-KEY-${PKG}" ]; then
-            mkdir -p pages/rpm
-            cp "rpms/RPM-GPG-KEY-${PKG}" pages/rpm/
-          fi
-
-          # --- Step 3: Merge all repos' repodata into unified repo ---
-          WORKDIR="$(pwd)"
-          for arch in x86_64 aarch64 noarch; do
-            output="${WORKDIR}/pages/rpm/fedora/${FEDORA_VER}/${arch}"
-            mkdir -p "${output}"
-
-            # Collect all repos that have repodata for this arch (absolute paths)
-            repos=()
-            for repo_dir in "${WORKDIR}"/pages/_repos/*/rpm/fedora/${FEDORA_VER}/${arch}; do
-              if [ -d "${repo_dir}/repodata" ]; then
-                repos+=("--repo" "${repo_dir}")
-              fi
-            done
-
-            repo_count=$(( ${#repos[@]} / 2 ))
-            if [ ${repo_count} -gt 0 ]; then
-              echo "Merging ${arch}: ${repo_count} repo(s) → ${output}"
-              rm -rf "${output}/repodata"
-              mergerepo_c "${repos[@]}" -o "${output}" || echo "WARNING: mergerepo_c failed for ${arch}"
-              ls -la "${output}/repodata/" 2>/dev/null || echo "WARNING: No repodata created for ${arch}"
-            fi
-          done
-
-          echo "Merged repository structure:"
-          find pages/rpm/fedora/ -name 'repomd.xml' 2>/dev/null
-
-      - name: Push to central repo
+      - name: Trigger update-repos on central pages repo
         env:
-          PAGES_TOKEN: ${{ secrets.PAGES_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAGES_TOKEN }}
         run: |
-          cd pages
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
-
-          git commit -m "Update RPM: ${{ inputs.package-name }}"
-
-          REMOTE_URL="https://x-access-token:${PAGES_TOKEN}@github.com/xibo-players/xibo-players.github.io.git"
-
-          # Retry push with rebase to handle concurrent updates from other repos
-          for i in 1 2 3; do
-            git push "$REMOTE_URL" main && break
-            echo "Push failed (attempt $i), rebasing..."
-            git pull --rebase "$REMOTE_URL" main
-          done
+          curl -sf -X POST \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/xibo-players/xibo-players.github.io/dispatches" \
+            -d '{"event_type": "update-repos", "client_payload": {"package": "${{ inputs.package-name }}", "repo": "${{ github.repository }}", "tag": "${{ github.ref_name }}"}}'
+          echo "Triggered update-repos for ${{ inputs.package-name }}"
