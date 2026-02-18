@@ -262,8 +262,12 @@ jobs:
           # RPM 6.0 validates %__gpg_sign_cmd: needs argc >= 2 and
           # runs argv[0] --version checking for "GnuPG". Simplest fix:
           # replace /usr/bin/gpg in this disposable container.
+          # Use --passphrase-fd (not --passphrase "") because GPG 2.4
+          # treats empty --passphrase as "no passphrase given".
+          echo "${GPG_PASSPHRASE:-}" > /tmp/gpg-passphrase
+          chmod 600 /tmp/gpg-passphrase
           mv /usr/bin/gpg /usr/bin/gpg.real
-          printf '#!/bin/bash\nexec /usr/bin/gpg.real --batch --no-tty --pinentry-mode loopback --passphrase "%s" "$@"\n' "${GPG_PASSPHRASE:-}" > /usr/bin/gpg
+          printf '#!/bin/bash\nexec /usr/bin/gpg.real --batch --no-tty --pinentry-mode loopback --passphrase-fd 3 "$@" 3< /tmp/gpg-passphrase\n' > /usr/bin/gpg
           chmod 755 /usr/bin/gpg
 
           echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
