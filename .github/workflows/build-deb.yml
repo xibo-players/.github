@@ -379,10 +379,14 @@ jobs:
 
           git commit -m "Update DEB repository - ${{ inputs.package-name }}"
 
-          # Pull with rebase to handle concurrent pushes
-          git pull --rebase "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages || true
+          REMOTE_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+
+          # Pull with rebase to handle concurrent pushes (skip if branch doesn't exist remotely yet)
+          if git ls-remote --exit-code "$REMOTE_URL" gh-pages >/dev/null 2>&1; then
+            git pull --rebase "$REMOTE_URL" gh-pages || true
+          fi
 
           # Push changes
-          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+          git push "$REMOTE_URL" gh-pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
