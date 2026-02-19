@@ -90,7 +90,10 @@ jobs:
 
       - name: Build disk image with mkosi
         run: |
-          mkosi --force --image-version=${{ steps.version.outputs.version }}
+          # Retry once on transient mirror/checksum failures
+          mkosi --force --image-version=${{ steps.version.outputs.version }} || \
+            (echo "Retrying after transient failure..." && sleep 10 && \
+             mkosi --force --image-version=${{ steps.version.outputs.version }})
 
       - name: Convert and compress images
         env:
@@ -171,7 +174,10 @@ jobs:
           find mkosi-extra -type f -name "doas.conf" -exec chmod 600 {} \; 2>/dev/null || true
 
       - name: Build disk image
-        run: mkosi --force --image-version=${{ steps.version.outputs.version }}
+        run: |
+          mkosi --force --image-version=${{ steps.version.outputs.version }} || \
+            (echo "Retrying after transient failure..." && sleep 10 && \
+             mkosi --force --image-version=${{ steps.version.outputs.version }})
 
       - name: Rename and compress
         env:
@@ -261,6 +267,8 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -449,7 +457,11 @@ jobs:
           fi
           
           git commit -m "Update kiosk images - ${{ inputs.package-name }}"
-          git pull --rebase "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages || true
-          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+          REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          # Only pull if remote gh-pages exists
+          if git ls-remote --exit-code "$REPO_URL" refs/heads/gh-pages >/dev/null 2>&1; then
+            git pull --rebase "$REPO_URL" gh-pages || true
+          fi
+          git push "$REPO_URL" gh-pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
