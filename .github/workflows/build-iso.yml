@@ -52,6 +52,7 @@ jobs:
             mkosi \
             systemd-container \
             qemu-img \
+            mtools \
             xz
 
       - uses: actions/checkout@v4
@@ -90,7 +91,10 @@ jobs:
 
       - name: Build disk image with mkosi
         run: |
-          mkosi --force --image-version=${{ steps.version.outputs.version }}
+          # Retry once on transient mirror/checksum failures
+          mkosi --force --image-version=${{ steps.version.outputs.version }} || \
+            (echo "Retrying after transient failure..." && sleep 10 && \
+             mkosi --force --image-version=${{ steps.version.outputs.version }})
 
       - name: Convert and compress images
         env:
@@ -136,6 +140,7 @@ jobs:
             git \
             mkosi \
             systemd-container \
+            mtools \
             xz
 
       - uses: actions/checkout@v4
@@ -171,7 +176,10 @@ jobs:
           find mkosi-extra -type f -name "doas.conf" -exec chmod 600 {} \; 2>/dev/null || true
 
       - name: Build disk image
-        run: mkosi --force --image-version=${{ steps.version.outputs.version }}
+        run: |
+          mkosi --force --image-version=${{ steps.version.outputs.version }} || \
+            (echo "Retrying after transient failure..." && sleep 10 && \
+             mkosi --force --image-version=${{ steps.version.outputs.version }})
 
       - name: Rename and compress
         env:
@@ -255,12 +263,23 @@ jobs:
   release:
     name: Create GitHub Release
     needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-installer-iso]
-    if: startsWith(github.ref, 'refs/tags/v') && always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-installer-iso.result == 'success')
+    if: always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-installer-iso.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -281,29 +300,39 @@ jobs:
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.version.outputs.tag }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
           # Create release if it doesn't exist
           gh release view "$TAG" --json tagName >/dev/null 2>&1 || \
             gh release create "$TAG" \
-              --title "${PACKAGE} Kiosk ${TAG}" \
-              --notes "## ${PACKAGE} Kiosk Images
+              --title "${PACKAGE} ${TAG}" \
+              --notes "## ${PACKAGE} ${TAG}
 
-          ### Installation Methods
+          ### Available Images
 
-          #### Installer ISO (Recommended)
-          Boot from USB and install automatically:
+          | Image | Use Case |
+          |-------|----------|
+          | **Installer ISO** (x86_64) | Flash to USB, boot and install on any x86_64 PC. Automated Fedora install with kiosk config. |
+          | **QCOW2** (x86_64) | Virtual machines — GNOME Boxes, virt-manager, Proxmox, QEMU. Ready to boot, no install needed. |
+          | **Raw.xz** (x86_64) | Write directly to SSD/SD card with dd or Balena Etcher. For PCs, Intel NUCs, kiosk hardware. |
+          | **Raw.xz** (aarch64) | Write to SD card for Raspberry Pi 4/5, or eMMC for ARM SBCs. |
+
+          ### Installation
+
+          **USB installer (recommended for PCs):**
           \`\`\`bash
           sudo dd if=${PACKAGE}-kiosk-installer_*_x86_64.iso of=/dev/sdX bs=8M status=progress
           \`\`\`
 
-          #### Disk Images
-          - **QCOW2** (x86_64): For GNOME Boxes, virt-manager, QEMU
-          - **Raw.xz** (x86_64/aarch64): For Balena Etcher or dd
-
+          **Direct write (PCs, Raspberry Pi, ARM boards):**
           \`\`\`bash
           xz -dc ${PACKAGE}-kiosk_*_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
+          \`\`\`
+
+          **Virtual machine:**
+          \`\`\`bash
+          qemu-system-x86_64 -enable-kvm -m 2G -drive file=${PACKAGE}-kiosk_*_x86_64.qcow2
           \`\`\`
 
           ### Default Credentials
@@ -321,135 +350,18 @@ jobs:
           gh release upload "$TAG" release/* --clobber
 
   publish-iso:
-    name: Publish to gh-pages
-    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-installer-iso]
-    if: startsWith(github.ref, 'refs/tags/v') && always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-installer-iso.result == 'success')
+    name: Trigger repository update
+    needs: [release]
+    if: needs.release.result == 'success'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: gh-pages
-          fetch-depth: 1
-        continue-on-error: true
-
-      - name: Initialize gh-pages if needed
-        run: |
-          if [ ! -d "gh-pages/.git" ]; then
-            mkdir -p gh-pages
-            cd gh-pages
-            git init
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git checkout -b gh-pages
-          fi
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts/
-
-      - name: Setup ISO repository
-        run: |
-          mkdir -p gh-pages/images
-          
-          # Move all images to gh-pages
-          find artifacts -type f \( -name "*.iso" -o -name "*.qcow2" -o -name "*.raw.xz" \) -exec cp {} gh-pages/images/ \;
-          
-          # Generate checksums
-          cd gh-pages/images
-          sha256sum * > SHA256SUMS 2>/dev/null || true
-          
-          # Create index file
-          cat > index.html << 'EOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Xibo Players - Kiosk Images</title>
-            <style>
-              body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
-              h1 { color: #333; }
-              h2 { color: #666; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
-              .image-list { background: #f9f9f9; padding: 20px; border-radius: 5px; }
-              ul { list-style-type: none; padding: 0; }
-              li { margin: 10px 0; padding: 10px; background: white; border-radius: 3px; }
-              a { color: #0066cc; text-decoration: none; font-weight: bold; }
-              a:hover { text-decoration: underline; }
-              .size { color: #666; font-size: 0.9em; }
-              code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
-              pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
-            </style>
-          </head>
-          <body>
-            <h1>Xibo Players - Kiosk Images</h1>
-            
-            <h2>Available Images</h2>
-            <div class="image-list">
-              <ul>
-          EOF
-          
-          for file in *.iso *.qcow2 *.raw.xz; do
-            if [ -f "$file" ]; then
-              size=$(du -h "$file" | cut -f1)
-              echo "        <li><a href=\"$file\">$file</a> <span class=\"size\">($size)</span></li>" >> index.html
-            fi
-          done
-          
-          cat >> index.html << 'EOF'
-              </ul>
-            </div>
-            
-            <h2>Installation</h2>
-            
-            <h3>Installer ISO (Recommended for physical hardware)</h3>
-            <p>Flash to USB and boot:</p>
-            <pre>sudo dd if=*-installer_*.iso of=/dev/sdX bs=8M status=progress</pre>
-            
-            <h3>Disk Images</h3>
-            <p><strong>QCOW2</strong> - For VMs (GNOME Boxes, virt-manager):</p>
-            <pre>qemu-system-x86_64 -enable-kvm -m 2G -drive file=*-kiosk_*.qcow2</pre>
-            
-            <p><strong>Raw.xz</strong> - For physical hardware:</p>
-            <pre>xz -dc *-kiosk_*.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress</pre>
-            
-            <h2>Verification</h2>
-            <p>Download and verify checksums:</p>
-            <p><a href="SHA256SUMS">SHA256SUMS</a></p>
-            <pre>sha256sum -c SHA256SUMS</pre>
-            
-            <h2>Default Credentials</h2>
-            <ul>
-              <li><code>xibo</code> / <code>xibo</code> (kiosk user)</li>
-              <li><code>root</code> / <code>root</code> (locked by default)</li>
-            </ul>
-            <p><strong>⚠️ Change passwords after first login!</strong></p>
-            
-            <hr>
-            <p><small>Updated: $(date -u)</small></p>
-          </body>
-          </html>
-          EOF
-          
-          echo "Images published:"
-          ls -lah
-
-      - name: Push to gh-pages
-        run: |
-          cd gh-pages
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
-          
-          git commit -m "Update kiosk images - ${{ inputs.package-name }}"
-          git pull --rebase "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages || true
-          git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+      - name: Trigger ghpages repo update
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GHPAGES_TOKEN }}
+        run: |
+          if [ -n "$GH_TOKEN" ]; then
+            gh api repos/xibo-players/xibo-players.github.io/dispatches \
+              -f event_type=update-repos \
+              -f "client_payload[source]=${{ inputs.package-name }}" || true
+          fi
