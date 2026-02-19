@@ -15,6 +15,10 @@ on:
       tarball-name:
         type: string
         default: 'xiboplayer-pwa-dist.tar.gz'
+      cache-deps:
+        type: boolean
+        default: true
+        description: 'Cache pnpm dependencies (requires lockfile — set false if no lockfile committed)'
       install-command:
         type: string
         default: 'pnpm install --frozen-lockfile'
@@ -36,7 +40,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
-          cache: pnpm
+          cache: ${{ inputs.cache-deps && 'pnpm' || '' }}
 
       - run: ${{ inputs.install-command }}
 
