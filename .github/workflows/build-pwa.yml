@@ -15,6 +15,10 @@ on:
       tarball-name:
         type: string
         default: 'xiboplayer-pwa-dist.tar.gz'
+      install-command:
+        type: string
+        default: 'pnpm install --frozen-lockfile'
+        description: 'Install command (use --no-frozen-lockfile for repos with workspace overrides)'
       release-name:
         type: string
         default: 'PWA Player'
@@ -34,7 +38,7 @@ jobs:
           node-version: ${{ inputs.node-version }}
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - run: ${{ inputs.install-command }}
 
       - run: ${{ inputs.build-command }}
 
