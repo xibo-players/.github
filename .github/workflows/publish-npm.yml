@@ -6,6 +6,14 @@ on:
       node-version:
         type: string
         default: '22'
+      cache-deps:
+        type: boolean
+        default: true
+        description: 'Cache pnpm dependencies (requires lockfile — set false if no lockfile committed)'
+      install-command:
+        type: string
+        default: 'pnpm install --frozen-lockfile'
+        description: 'Install command (use --no-frozen-lockfile for repos without lockfile)'
       publish-command:
         type: string
         default: 'pnpm publish --no-git-checks --access public'
@@ -28,10 +36,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
-          cache: pnpm
+          cache: ${{ inputs.cache-deps && 'pnpm' || '' }}
           registry-url: 'https://registry.npmjs.org'
 
-      - run: pnpm install --frozen-lockfile
+      - run: ${{ inputs.install-command }}
 
       - run: ${{ inputs.publish-command }}
         env:
