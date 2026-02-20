@@ -62,5 +62,6 @@ An [MCP Server](https://github.com/xibo-players/xiboplayer/tree/main/mcp-server)
 ## Links
 
 - **[dnf.xiboplayer.org](https://dnf.xiboplayer.org)** — Browse packages, images, and setup instructions
+- **[Feature comparison](https://github.com/xibo-players/xibo-players.github.io/blob/main/docs/FEATURE_COMPARISON.md)** — Detailed comparison vs upstream XLR, Windows, and Arexibo players
 - **[Kiosk images](https://github.com/xibo-players/xibo-kiosk/releases/latest)** — Download bootable ISO, QCOW2, and raw images
 - **[npm packages](https://www.npmjs.com/org/xiboplayer)** — SDK packages on npm
