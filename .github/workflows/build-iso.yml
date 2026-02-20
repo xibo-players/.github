@@ -302,49 +302,105 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
           PACKAGE: ${{ inputs.package-name }}
+          VERSION: ${{ steps.version.outputs.tag }}
         run: |
-          # Create release if it doesn't exist
-          gh release view "$TAG" --json tagName >/dev/null 2>&1 || \
-            gh release create "$TAG" \
-              --title "${PACKAGE} ${TAG}" \
-              --notes "## ${PACKAGE} ${TAG}
+          VERSION="${TAG#v}"
 
-          ### Available Images
+          NOTES=$(cat <<NOTES_EOF
+          # ${PACKAGE} ${TAG}
 
-          | Image | Use Case |
-          |-------|----------|
-          | **Installer ISO** (x86_64) | Flash to USB, boot and install on any x86_64 PC. Automated Fedora install with kiosk config. |
-          | **QCOW2** (x86_64) | Virtual machines — GNOME Boxes, virt-manager, Proxmox, QEMU. Ready to boot, no install needed. |
-          | **Raw.xz** (x86_64) | Write directly to SSD/SD card with dd or Balena Etcher. For PCs, Intel NUCs, kiosk hardware. |
-          | **Raw.xz** (aarch64) | Write to SD card for Raspberry Pi 4/5, or eMMC for ARM SBCs. |
+          Turn any PC or Raspberry Pi into a digital signage kiosk — just flash, boot, and connect to your Xibo CMS.
 
-          ### Installation
+          ## Which image do I need?
 
-          **USB installer (recommended for PCs):**
+          ### 🖥️ PC or laptop — **Installer ISO** (recommended)
+
+          The easiest option for any Intel/AMD computer. Flash it to a USB stick, boot from it, and the installer does the rest — formats the disk, installs everything, and reboots into a ready-to-use kiosk.
+
+          **Steps:**
+          1. Download \`${PACKAGE}-kiosk-installer_${VERSION}_x86_64.iso\`
+          2. Flash it to a USB stick:
+             \`\`\`
+             sudo dd if=${PACKAGE}-kiosk-installer_${VERSION}_x86_64.iso of=/dev/sdX bs=8M status=progress
+             \`\`\`
+             Or use [Balena Etcher](https://etcher.balena.io/) (Windows/Mac/Linux — just click and flash)
+          3. Boot from USB and wait — installation is fully automated
+          4. Remove USB, the kiosk boots and shows the setup screen
+
+          ---
+
+          ### 🍓 Raspberry Pi 4/5 — **Raw image (aarch64)**
+
+          Write directly to an SD card (or eMMC). No installer needed — just flash and boot.
+
+          **Steps:**
+          1. Download \`${PACKAGE}-kiosk_${VERSION}_aarch64.raw.xz\`
+          2. Flash it to your SD card:
+             \`\`\`
+             xz -dc ${PACKAGE}-kiosk_${VERSION}_aarch64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
+             \`\`\`
+             Or use [Balena Etcher](https://etcher.balena.io/) (handles .xz automatically)
+          3. Insert SD card into your Pi and power on
+
+          ---
+
+          ### 💻 Virtual machine (QEMU, Proxmox, GNOME Boxes) — **QCOW2**
+
+          Ready-to-boot VM image. No installation, no USB stick — just open and run.
+
+          **Steps:**
+          1. Download \`${PACKAGE}-kiosk_${VERSION}_x86_64.qcow2\`
+          2. Run it:
+             - **GNOME Boxes**: File → Import → select the .qcow2 file
+             - **virt-manager**: Create VM → Import existing disk → select .qcow2
+             - **Proxmox**: Upload to storage, create VM with existing disk
+             - **QEMU command line**:
+               \`\`\`
+               qemu-system-x86_64 -enable-kvm -m 2G -drive file=${PACKAGE}-kiosk_${VERSION}_x86_64.qcow2
+               \`\`\`
+
+          ---
+
+          ### 🔧 Intel NUC / embedded PC — **Raw image (x86_64)**
+
+          Write directly to the internal SSD or an SD card. Same as the Raspberry Pi image but for Intel/AMD hardware.
+
+          **Steps:**
+          1. Download \`${PACKAGE}-kiosk_${VERSION}_x86_64.raw.xz\`
+          2. Flash to disk:
+             \`\`\`
+             xz -dc ${PACKAGE}-kiosk_${VERSION}_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
+             \`\`\`
+             Or use [Balena Etcher](https://etcher.balena.io/)
+
+          ---
+
+          ## After booting
+
+          1. Log in with user \`xibo\` / password \`xibo\`
+          2. **Change your password** — \`passwd\`
+          3. Connect to your Xibo CMS from the kiosk setup screen
+          4. The display registers automatically and starts playing your scheduled content
+
+          ## RPM package (for existing Fedora systems)
+
+          If you already have Fedora installed and just want the kiosk player software:
           \`\`\`bash
-          sudo dd if=${PACKAGE}-kiosk-installer_*_x86_64.iso of=/dev/sdX bs=8M status=progress
+          sudo dnf install xibo-kiosk
           \`\`\`
 
-          **Direct write (PCs, Raspberry Pi, ARM boards):**
-          \`\`\`bash
-          xz -dc ${PACKAGE}-kiosk_*_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
-          \`\`\`
+          ## Verify downloads
 
-          **Virtual machine:**
-          \`\`\`bash
-          qemu-system-x86_64 -enable-kvm -m 2G -drive file=${PACKAGE}-kiosk_*_x86_64.qcow2
-          \`\`\`
-
-          ### Default Credentials
-          - User: \`xibo\` / Password: \`xibo\`
-          - Root: \`root\` (locked by default)
-
-          > **Change passwords after first login!**
-
-          ### Verification
           \`\`\`bash
           sha256sum -c SHA256SUMS
-          \`\`\`"
+          \`\`\`
+          NOTES_EOF
+          )
+
+          # Create release if it doesn't exist, then always update notes
+          gh release view "$TAG" --json tagName >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "${PACKAGE} ${TAG}" --notes ""
+          gh release edit "$TAG" --notes "$NOTES"
 
           # Upload all artifacts (--clobber overwrites existing)
           gh release upload "$TAG" release/* --clobber

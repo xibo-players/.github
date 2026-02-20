@@ -16,17 +16,20 @@ on:
         description: 'Install command (use --no-frozen-lockfile for repos without lockfile)'
       publish-command:
         type: string
-        default: 'pnpm publish --no-git-checks --access public'
-        description: 'Publish command. For monorepos use: pnpm -r publish --no-git-checks --access public'
+        default: 'pnpm publish --no-git-checks --access public --provenance'
+        description: 'Publish command. For monorepos use: pnpm -r publish --no-git-checks --access public --provenance'
     secrets:
       npm-token:
         required: true
-        description: 'NPM_TOKEN for authentication'
+        description: 'NPM_TOKEN for npm authentication'
 
 jobs:
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
