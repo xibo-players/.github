@@ -114,24 +114,25 @@ jobs:
         if: inputs.build-command != ''
         run: ${{ inputs.build-command }}
 
-      - name: Determine version
+      - name: Determine version and release
         id: version
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+            echo "release=1" >> "$GITHUB_OUTPUT"
           elif [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+            TAG="${TAG#v}"
+            # Support tags like v0.3.1-2 → version=0.3.1, release=2
+            if [[ "$TAG" == *-* ]]; then
+              echo "version=${TAG%%-*}" >> "$GITHUB_OUTPUT"
+              echo "release=${TAG#*-}" >> "$GITHUB_OUTPUT"
+            else
+              echo "version=${TAG}" >> "$GITHUB_OUTPUT"
+              echo "release=1" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Determine release number
-        id: release
-        run: |
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "release=1" >> "$GITHUB_OUTPUT"
-          else
             # Use short SHA for non-tag builds
             SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
             echo "release=0.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
@@ -141,7 +142,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          RELEASE="${{ steps.release.outputs.release }}"
+          RELEASE="${{ steps.version.outputs.release }}"
 
           # Priority: script > spec > error
           # When both rpm-script and rpm-spec are provided, the script builds
@@ -149,7 +150,7 @@ jobs:
           if [ -f "${{ inputs.rpm-script }}" ]; then
             echo "Building RPM using script: ${{ inputs.rpm-script }}"
             chmod +x ${{ inputs.rpm-script }}
-            ./${{ inputs.rpm-script }} "${VERSION}"
+            ./${{ inputs.rpm-script }} "${VERSION}" "${RELEASE}"
 
           elif [ -n "${{ inputs.rpm-spec }}" ] && [ -f "${{ inputs.rpm-spec }}" ]; then
             echo "Building RPM from spec file: ${{ inputs.rpm-spec }}"

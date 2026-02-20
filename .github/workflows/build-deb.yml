@@ -107,16 +107,26 @@ jobs:
         if: inputs.build-command != ''
         run: ${{ inputs.build-command }}
 
-      - name: Determine version
+      - name: Determine version and release
         id: version
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+            echo "release=1" >> "$GITHUB_OUTPUT"
           elif [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+            TAG="${TAG#v}"
+            # Support tags like v0.3.1-2 → version=0.3.1, release=2
+            if [[ "$TAG" == *-* ]]; then
+              echo "version=${TAG%%-*}" >> "$GITHUB_OUTPUT"
+              echo "release=${TAG#*-}" >> "$GITHUB_OUTPUT"
+            else
+              echo "version=${TAG}" >> "$GITHUB_OUTPUT"
+              echo "release=1" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+            echo "release=1" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build DEB
@@ -124,7 +134,7 @@ jobs:
         run: |
           if [ -f "${{ inputs.deb-script }}" ]; then
             chmod +x ${{ inputs.deb-script }}
-            ./${{ inputs.deb-script }} "${{ steps.version.outputs.version }}"
+            ./${{ inputs.deb-script }} "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.release }}"
           else
             echo "Error: DEB script ${{ inputs.deb-script }} not found"
             exit 1
