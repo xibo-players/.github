@@ -109,6 +109,7 @@ jobs:
 
       - name: Determine version and release
         id: version
+        shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
