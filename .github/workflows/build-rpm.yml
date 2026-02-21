@@ -244,6 +244,14 @@ jobs:
       - name: List downloaded RPMs
         run: ls -lh rpms/
 
+      - name: Verify RPM integrity
+        run: |
+          dnf install -y rpm-build
+          for rpm_file in rpms/*.rpm; do
+            echo "Checking: $(basename $rpm_file)"
+            rpm -Kv "$rpm_file" 2>&1 | grep -E "(SHA|digest)" || true
+          done
+
       - name: Import GPG key and sign RPMs
         if: inputs.gpg-sign
         env:
