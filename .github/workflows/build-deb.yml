@@ -111,10 +111,24 @@ jobs:
         id: version
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
-            echo "release=1" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+          # Parse version from build script defaults (single source of truth)
+          parse_build_script_version() {
+            local script="${{ inputs.deb-script }}"
+            if [[ -n "$script" && -f "$script" ]]; then
+              local ver rel
+              ver=$(grep -m1 'VERSION=.*{1:-' "$script" | sed 's/.*{1:-\([^}]*\)}.*/\1/')
+              rel=$(grep -m1 'RELEASE=.*{2:-' "$script" | sed 's/.*{2:-\([^}]*\)}.*/\1/')
+              if [[ -n "$ver" ]]; then
+                echo "version=${ver}" >> "$GITHUB_OUTPUT"
+                echo "release=${rel:-1}" >> "$GITHUB_OUTPUT"
+                echo "Parsed from build script: version=${ver}, release=${rel:-1}"
+                return 0
+              fi
+            fi
+            return 1
+          }
+
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
             TAG="${TAG#v}"
             # Support tags like v0.3.1-2 → version=0.3.1, release=2
@@ -125,6 +139,8 @@ jobs:
               echo "version=${TAG}" >> "$GITHUB_OUTPUT"
               echo "release=1" >> "$GITHUB_OUTPUT"
             fi
+          elif parse_build_script_version; then
+            echo "Using version from build script"
           else
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
             echo "release=1" >> "$GITHUB_OUTPUT"
