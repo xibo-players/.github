@@ -117,10 +117,24 @@ jobs:
       - name: Determine version and release
         id: version
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
-            echo "release=1" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+          # Parse version from spec file (single source of truth)
+          parse_spec_version() {
+            local spec="${{ inputs.rpm-spec }}"
+            if [[ -n "$spec" && -f "$spec" ]]; then
+              local ver rel
+              ver=$(grep -m1 '^Version:' "$spec" | awk '{print $2}')
+              rel=$(grep -m1 '^Release:' "$spec" | awk '{print $2}' | sed 's/%{?dist}//')
+              if [[ -n "$ver" ]]; then
+                echo "version=${ver}" >> "$GITHUB_OUTPUT"
+                echo "release=${rel:-1}" >> "$GITHUB_OUTPUT"
+                echo "Parsed from spec: version=${ver}, release=${rel:-1}"
+                return 0
+              fi
+            fi
+            return 1
+          }
+
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
             TAG="${TAG#v}"
             # Support tags like v0.3.1-2 → version=0.3.1, release=2
@@ -131,9 +145,10 @@ jobs:
               echo "version=${TAG}" >> "$GITHUB_OUTPUT"
               echo "release=1" >> "$GITHUB_OUTPUT"
             fi
+          elif parse_spec_version; then
+            echo "Using version from spec file"
           else
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
-            # Use short SHA for non-tag builds
             SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
             echo "release=0.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           fi
