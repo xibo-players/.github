@@ -2,7 +2,7 @@
 
 ## Problem
 
-The URLs documented in this repository (like https://dnf.xiboplayer.org/rpm/) require the `gh-pages` branch to be initialized and GitHub Pages to be configured with the custom domain.
+The URLs documented in this repository (like https://dl.xiboplayer.org/rpm/) require the `gh-pages` branch to be initialized and GitHub Pages to be configured with the custom domain.
 
 ## Solution
 
@@ -36,21 +36,21 @@ After the gh-pages branch exists, ensure GitHub Pages is enabled:
 
 ## Verification
 
-Once enabled and the custom domain (dnf.xiboplayer.org) is configured, the following URLs should be accessible:
-- https://dnf.xiboplayer.org/ - Main index
-- https://dnf.xiboplayer.org/rpm/ - RPM repository index
-- https://dnf.xiboplayer.org/deb/ - DEB repository index
-- https://dnf.xiboplayer.org/images/ - Kiosk images index
-- https://dnf.xiboplayer.org/scripts/setup-repo.sh - Setup script
+Once enabled and the custom domain (dl.xiboplayer.org) is configured, the following URLs should be accessible:
+- https://dl.xiboplayer.org/ - Main index
+- https://dl.xiboplayer.org/rpm/ - RPM repository index
+- https://dl.xiboplayer.org/deb/ - DEB repository index
+- https://dl.xiboplayer.org/images/ - Kiosk images index
+- https://dl.xiboplayer.org/scripts/setup-repo.sh - Setup script
 
 The RPM repository structure will be:
-- https://dnf.xiboplayer.org/rpm/fedora/43/x86_64/
-- https://dnf.xiboplayer.org/rpm/fedora/43/aarch64/
-- https://dnf.xiboplayer.org/rpm/fedora/43/noarch/
+- https://dl.xiboplayer.org/rpm/fedora/43/x86_64/
+- https://dl.xiboplayer.org/rpm/fedora/43/aarch64/
+- https://dl.xiboplayer.org/rpm/fedora/43/noarch/
 
 The DEB repository structure will be:
-- https://dnf.xiboplayer.org/deb/ubuntu/24.04/amd64/
-- https://dnf.xiboplayer.org/deb/ubuntu/24.04/arm64/
-- https://dnf.xiboplayer.org/deb/ubuntu/24.04/all/
+- https://dl.xiboplayer.org/deb/ubuntu/24.04/amd64/
+- https://dl.xiboplayer.org/deb/ubuntu/24.04/arm64/
+- https://dl.xiboplayer.org/deb/ubuntu/24.04/all/
 
-**Note:** The custom domain `dnf.xiboplayer.org` is now configured. See [CUSTOM-DOMAIN-SETUP.md](CUSTOM-DOMAIN-SETUP.md) for details on the custom domain setup.
+**Note:** The custom domain `dl.xiboplayer.org` is now configured. See [CUSTOM-DOMAIN-SETUP.md](CUSTOM-DOMAIN-SETUP.md) for details on the custom domain setup.

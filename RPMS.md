@@ -7,7 +7,7 @@ RPMs built by the workflows in this repository are automatically published to Gi
 ### Browse RPMs Online
 
 **Main Repository Index:**
-- 🔗 https://dnf.xiboplayer.org/rpm/
+- 🔗 https://dl.xiboplayer.org/rpm/
 
 This page shows:
 - Available architectures (x86_64, aarch64, noarch)
@@ -16,9 +16,9 @@ This page shows:
 
 ### Direct Architecture URLs
 
-- **x86_64** (64-bit Intel/AMD): https://dnf.xiboplayer.org/rpm/fedora/43/x86_64/
-- **aarch64** (64-bit ARM): https://dnf.xiboplayer.org/rpm/fedora/43/aarch64/
-- **noarch** (Architecture independent): https://dnf.xiboplayer.org/rpm/fedora/43/noarch/
+- **x86_64** (64-bit Intel/AMD): https://dl.xiboplayer.org/rpm/fedora/43/x86_64/
+- **aarch64** (64-bit ARM): https://dl.xiboplayer.org/rpm/fedora/43/aarch64/
+- **noarch** (Architecture independent): https://dl.xiboplayer.org/rpm/fedora/43/noarch/
 
 ## GitHub Releases
 
@@ -35,7 +35,7 @@ RPMs are also attached to GitHub Releases when tagged:
 
 ```bash
 # Setup repository
-curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash
+curl -fsSL https://dl.xiboplayer.org/scripts/setup-repo.sh | sudo bash
 
 # Install package
 sudo dnf install package-name
@@ -48,7 +48,7 @@ sudo dnf install package-name
 sudo tee /etc/yum.repos.d/xibo-players.repo <<'EOF'
 [xibo-players]
 name=Xibo Players
-baseurl=https://dnf.xiboplayer.org/rpm/fedora/$releasever/$basearch/
+baseurl=https://dl.xiboplayer.org/rpm/fedora/$releasever/$basearch/
 enabled=1
 gpgcheck=0
 EOF
@@ -73,7 +73,7 @@ If you prefer to download and install manually:
 The RPM repository is organized as:
 
 ```
-https://dnf.xiboplayer.org/rpm/
+https://dl.xiboplayer.org/rpm/
 ├── index.html                    # Main repository page
 ├── fedora/
 │   └── 43/
@@ -94,10 +94,10 @@ https://dnf.xiboplayer.org/rpm/
 To verify that RPMs have been published:
 
 1. **Check GitHub Actions**: Go to the repository's "Actions" tab and verify the workflow completed successfully
-2. **Browse gh-pages**: Visit https://dnf.xiboplayer.org/rpm/
+2. **Browse gh-pages**: Visit https://dl.xiboplayer.org/rpm/
 3. **Query the repository**:
    ```bash
-   dnf repoquery --repofrompath=xibo,https://dnf.xiboplayer.org/rpm/fedora/43/x86_64/ --available
+   dnf repoquery --repofrompath=xibo,https://dl.xiboplayer.org/rpm/fedora/43/x86_64/ --available
    ```
 
 ## Troubleshooting

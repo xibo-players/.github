@@ -34,7 +34,7 @@ Already running Fedora or Ubuntu? Add our repo and install with one command.
 **Fedora 43**
 ```bash
 sudo dnf config-manager addrepo \
-  --from-repofile=https://dnf.xiboplayer.org/rpm/xibo-players.repo
+  --from-repofile=https://dl.xiboplayer.org/rpm/xibo-players.repo
 
 sudo dnf install xibo-kiosk            # Full kiosk OS
 sudo dnf install xiboplayer-electron   # Electron player
@@ -44,10 +44,10 @@ sudo dnf install arexibo               # Native Rust player
 
 **Ubuntu 24.04**
 ```bash
-curl -fsSL https://dnf.xiboplayer.org/deb/GPG-KEY.asc \
+curl -fsSL https://dl.xiboplayer.org/deb/GPG-KEY.asc \
   | sudo gpg --dearmor -o /usr/share/keyrings/xibo-players.gpg
 
-sudo curl -fsSL https://dnf.xiboplayer.org/deb/xibo-players.sources \
+sudo curl -fsSL https://dl.xiboplayer.org/deb/xibo-players.sources \
   -o /etc/apt/sources.list.d/xibo-players.sources
 
 sudo apt update && sudo apt install xibo-kiosk
@@ -61,7 +61,7 @@ An [MCP Server](https://github.com/xibo-players/xiboplayer/tree/main/mcp-server)
 
 ## Links
 
-- **[dnf.xiboplayer.org](https://dnf.xiboplayer.org)** — Browse packages, images, and setup instructions
+- **[dl.xiboplayer.org](https://dl.xiboplayer.org)** — Browse packages, images, and setup instructions
 - **[Feature comparison](https://github.com/xibo-players/xibo-players.github.io/blob/main/docs/FEATURE_COMPARISON.md)** — Detailed comparison vs upstream XLR, Windows, and Arexibo players
 - **[Kiosk images](https://github.com/xibo-players/xibo-kiosk/releases/latest)** — Download bootable ISO, QCOW2, and raw images
 - **[npm packages](https://www.npmjs.com/org/xiboplayer)** — SDK packages on npm

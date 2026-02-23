@@ -15,7 +15,7 @@ To publish the GitHub Pages site for this repository:
 The workflow creates a GitHub Pages site with:
 
 ```
-https://dnf.xiboplayer.org/
+https://dl.xiboplayer.org/
 ├── index.html                    # Main landing page
 ├── rpm/
 │   ├── index.html               # RPM repository index
@@ -33,12 +33,12 @@ https://dnf.xiboplayer.org/
 
 After publishing and enabling GitHub Pages with custom domain:
 
-- **Main page**: https://dnf.xiboplayer.org/
-- **RPM repository**: https://dnf.xiboplayer.org/rpm/
-- **Kiosk images**: https://dnf.xiboplayer.org/images/
-- **Setup script**: https://dnf.xiboplayer.org/scripts/setup-repo.sh
+- **Main page**: https://dl.xiboplayer.org/
+- **RPM repository**: https://dl.xiboplayer.org/rpm/
+- **Kiosk images**: https://dl.xiboplayer.org/images/
+- **Setup script**: https://dl.xiboplayer.org/scripts/setup-repo.sh
 
-**Note:** The custom domain `dnf.xiboplayer.org` is configured for cleaner URLs. See [CUSTOM-DOMAIN-SETUP.md](CUSTOM-DOMAIN-SETUP.md) for setup details.
+**Note:** The custom domain `dl.xiboplayer.org` is configured for cleaner URLs. See [CUSTOM-DOMAIN-SETUP.md](CUSTOM-DOMAIN-SETUP.md) for setup details.
 
 ## Workflow Details
 
@@ -79,15 +79,15 @@ After the gh-pages branch is created:
    - Folder: `/ (root)`
 4. Click **Save**
 5. Wait a few minutes for deployment
-6. Site will be available at https://dnf.xiboplayer.org/
-7. **Custom Domain**: Configure dnf.xiboplayer.org in Settings → Pages → Custom domain
+6. Site will be available at https://dl.xiboplayer.org/
+7. **Custom Domain**: Configure dl.xiboplayer.org in Settings → Pages → Custom domain
 
 ## Verifying Deployment
 
 Check deployment status:
-- Settings → Pages shows deployment URL (dnf.xiboplayer.org)
+- Settings → Pages shows deployment URL (dl.xiboplayer.org)
 - Actions tab shows "pages-build-deployment" workflow
-- Visit https://dnf.xiboplayer.org/ after a few minutes
+- Visit https://dl.xiboplayer.org/ after a few minutes
 
 ## Troubleshooting
 

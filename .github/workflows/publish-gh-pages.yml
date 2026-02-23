@@ -90,7 +90,7 @@ jobs:
               <div class="card">
                   <h3>📦 RPM Repository</h3>
                   <p><a href="rpm/">Browse RPM packages →</a></p>
-                  <pre>curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash</pre>
+                  <pre>curl -fsSL https://dl.xiboplayer.org/scripts/setup-repo.sh | sudo bash</pre>
               </div>
 
               <div class="card">
@@ -124,7 +124,7 @@ jobs:
               <h1>📦 RPM Repository</h1>
               <p>Architectures: <a href="fedora/43/x86_64/">x86_64</a> | <a href="fedora/43/aarch64/">aarch64</a> | <a href="fedora/43/noarch/">noarch</a></p>
               <h2>Installation</h2>
-              <pre>curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash
+              <pre>curl -fsSL https://dl.xiboplayer.org/scripts/setup-repo.sh | sudo bash
           sudo dnf install xiboplayer-electron</pre>
               <p><a href="../">← Back</a></p>
           </body>
@@ -176,12 +176,12 @@ jobs:
           echo "The gh-pages branch has been created and published." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### URLs Available:" >> $GITHUB_STEP_SUMMARY
-          echo "- 📦 https://dnf.xiboplayer.org/rpm/" >> $GITHUB_STEP_SUMMARY
-          echo "- 💿 https://dnf.xiboplayer.org/images/" >> $GITHUB_STEP_SUMMARY
-          echo "- 🔧 https://dnf.xiboplayer.org/scripts/setup-repo.sh" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 https://dl.xiboplayer.org/rpm/" >> $GITHUB_STEP_SUMMARY
+          echo "- 💿 https://dl.xiboplayer.org/images/" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔧 https://dl.xiboplayer.org/scripts/setup-repo.sh" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
           echo "1. Go to repository Settings → Pages" >> $GITHUB_STEP_SUMMARY
           echo "2. Ensure Source is set to 'gh-pages' branch" >> $GITHUB_STEP_SUMMARY
-          echo "3. Custom domain dnf.xiboplayer.org is configured" >> $GITHUB_STEP_SUMMARY
+          echo "3. Custom domain dl.xiboplayer.org is configured" >> $GITHUB_STEP_SUMMARY
           echo "3. Wait a few minutes for deployment" >> $GITHUB_STEP_SUMMARY

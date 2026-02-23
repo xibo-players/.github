@@ -1,31 +1,31 @@
-# Custom Domain Setup for dnf.xiboplayer.org
+# Custom Domain Setup for dl.xiboplayer.org
 
 ## ✅ Setup Complete!
 
-The custom domain **dnf.xiboplayer.org** has been successfully configured and is now active!
+The custom domain **dl.xiboplayer.org** has been successfully configured and is now active!
 
 ### Active URLs
 
 Your repository is now accessible at these clean URLs:
-- **Main page**: https://dnf.xiboplayer.org/
-- **RPM repository**: https://dnf.xiboplayer.org/rpm/
-- **Kiosk images**: https://dnf.xiboplayer.org/images/
-- **Setup script**: https://dnf.xiboplayer.org/scripts/setup-repo.sh
+- **Main page**: https://dl.xiboplayer.org/
+- **RPM repository**: https://dl.xiboplayer.org/rpm/
+- **Kiosk images**: https://dl.xiboplayer.org/images/
+- **Setup script**: https://dl.xiboplayer.org/scripts/setup-repo.sh
 
 ---
 
 ## Original Setup Guide
 
-This guide explains how the custom domain `dnf.xiboplayer.org` was configured. Keep this for reference or if you need to set up additional domains.
+This guide explains how the custom domain `dl.xiboplayer.org` was configured. Keep this for reference or if you need to set up additional domains.
 
 ## How It Was Configured
 
-Instead of using the default GitHub Pages URL (`xibo-players.github.io/.github`), we configured the custom domain `dnf.xiboplayer.org` for cleaner, more professional URLs.
+Instead of using the default GitHub Pages URL (`xibo-players.github.io/.github`), we configured the custom domain `dl.xiboplayer.org` for cleaner, more professional URLs.
 
 **Result (Now Active):**
-- Repository URLs: `https://dnf.xiboplayer.org/rpm/fedora/43/x86_64/`
-- Setup script: `https://dnf.xiboplayer.org/scripts/setup-repo.sh`
-- Documentation: `https://dnf.xiboplayer.org/`
+- Repository URLs: `https://dl.xiboplayer.org/rpm/fedora/43/x86_64/`
+- Setup script: `https://dl.xiboplayer.org/scripts/setup-repo.sh`
+- Documentation: `https://dl.xiboplayer.org/`
 
 ---
 
@@ -84,10 +84,10 @@ Wait 5-10 minutes, then verify the DNS record:
 
 ```bash
 # Check DNS resolution
-nslookup dnf.xiboplayer.org
+nslookup dl.xiboplayer.org
 
 # Or use dig
-dig dnf.xiboplayer.org CNAME +short
+dig dl.xiboplayer.org CNAME +short
 ```
 
 Expected output: `xibo-players.github.io.`
@@ -100,7 +100,7 @@ The custom domain has been configured in GitHub Pages settings.
 
 1. Go to repository: https://github.com/xibo-players/.github
 2. Navigate to **Settings** → **Pages**
-3. Under "Custom domain", enter: `dnf.xiboplayer.org`
+3. Under "Custom domain", enter: `dl.xiboplayer.org`
 4. Click **Save**
 5. Wait a few minutes for DNS verification
 6. Once verified, check "Enforce HTTPS" (recommended)
@@ -114,7 +114,7 @@ Create a CNAME file in the gh-pages branch:
 git checkout gh-pages
 
 # Create CNAME file
-echo "dnf.xiboplayer.org" > CNAME
+echo "dl.xiboplayer.org" > CNAME
 
 # Commit and push
 git add CNAME
@@ -141,7 +141,7 @@ https://xibo-players.github.io/.github/rpm/
 
 **After:**
 ```
-https://dnf.xiboplayer.org/rpm/
+https://dl.xiboplayer.org/rpm/
 ```
 
 ## Step 4: Verify Setup (✅ Operational)
@@ -151,7 +151,7 @@ The custom domain is now operational and serving content.
 ### Check GitHub Pages Status
 
 1. Go to repository Settings → Pages
-2. You should see: "Your site is published at https://dnf.xiboplayer.org"
+2. You should see: "Your site is published at https://dl.xiboplayer.org"
 3. Status should show a green checkmark
 
 ### Test URLs
@@ -160,13 +160,13 @@ The custom domain is live at:
 
 ```bash
 # Test main page
-curl -I https://dnf.xiboplayer.org/
+curl -I https://dl.xiboplayer.org/
 
 # Test RPM repository
-curl -I https://dnf.xiboplayer.org/rpm/
+curl -I https://dl.xiboplayer.org/rpm/
 
 # Test architecture-specific repo
-curl -I https://dnf.xiboplayer.org/rpm/fedora/43/x86_64/
+curl -I https://dl.xiboplayer.org/rpm/fedora/43/x86_64/
 ```
 
 All return successful responses.
@@ -180,13 +180,13 @@ Users can now configure DNF to use the custom domain:
 sudo tee /etc/yum.repos.d/xibo-players.repo <<'EOF'
 [xibo-players]
 name=Xibo Players
-baseurl=https://dnf.xiboplayer.org/rpm/fedora/$releasever/$basearch/
+baseurl=https://dl.xiboplayer.org/rpm/fedora/$releasever/$basearch/
 enabled=1
 gpgcheck=0
 EOF
 
 # Query available packages
-dnf repoquery --repofrompath=xibo,https://dnf.xiboplayer.org/rpm/fedora/43/x86_64/ --available
+dnf repoquery --repofrompath=xibo,https://dl.xiboplayer.org/rpm/fedora/43/x86_64/ --available
 ```
 
 ---
@@ -195,7 +195,7 @@ dnf repoquery --repofrompath=xibo,https://dnf.xiboplayer.org/rpm/fedora/43/x86_6
 
 Now that the custom domain is active, users enjoy:
 
-✅ **Cleaner URLs**: `dnf.xiboplayer.org` vs `xibo-players.github.io/.github`  
+✅ **Cleaner URLs**: `dl.xiboplayer.org` vs `xibo-players.github.io/.github`  
 ✅ **Professional appearance**: Branded domain name  
 ✅ **Easier to remember**: Simple, intuitive URL structure  
 ✅ **Better SEO**: Custom domain improves search visibility  
@@ -213,7 +213,7 @@ For reference or to set up additional custom domains, the complete setup process
 
 ### DNS Not Resolving
 
-**Problem:** `nslookup dnf.xiboplayer.org` returns no results
+**Problem:** `nslookup dl.xiboplayer.org` returns no results
 
 **Solutions:**
 1. Wait longer - DNS can take up to 48 hours to propagate globally
@@ -229,7 +229,7 @@ For reference or to set up additional custom domains, the complete setup process
 1. Wait 10-30 minutes after creating DNS record
 2. Temporarily disable "Enforce HTTPS"
 3. Remove and re-add the custom domain
-4. Check DNS with `dig dnf.xiboplayer.org CNAME +short`
+4. Check DNS with `dig dl.xiboplayer.org CNAME +short`
 5. Ensure CNAME points to `xibo-players.github.io` (not the full path)
 
 ### HTTPS Certificate Issues
@@ -258,16 +258,16 @@ For reference or to set up additional custom domains, the complete setup process
 
 **Solutions:**
 1. Update all internal links to use relative paths or HTTPS
-2. In workflow files, use `https://dnf.xiboplayer.org`
+2. In workflow files, use `https://dl.xiboplayer.org`
 3. Enable "Enforce HTTPS" in GitHub Pages settings
 
 ## Advanced: Subdirectory Setup
 
-If you want to use paths like `https://dnf.xiboplayer.org/` for the root:
+If you want to use paths like `https://dl.xiboplayer.org/` for the root:
 
 1. Keep gh-pages branch structure as-is
-2. All content in gh-pages branch root will be at `https://dnf.xiboplayer.org/`
-3. RPM repo: `https://dnf.xiboplayer.org/rpm/`
+2. All content in gh-pages branch root will be at `https://dl.xiboplayer.org/`
+3. RPM repo: `https://dl.xiboplayer.org/rpm/`
 4. No path prefix needed - cleaner URLs!
 
 ## Post-Setup Checklist
@@ -290,7 +290,7 @@ After complete setup, users will configure their systems with:
 sudo tee /etc/yum.repos.d/xibo-players.repo <<'EOF'
 [xibo-players]
 name=Xibo Players
-baseurl=https://dnf.xiboplayer.org/rpm/fedora/$releasever/$basearch/
+baseurl=https://dl.xiboplayer.org/rpm/fedora/$releasever/$basearch/
 enabled=1
 gpgcheck=0
 EOF

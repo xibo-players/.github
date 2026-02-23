@@ -4,21 +4,21 @@ This repository contains reusable GitHub Actions workflows that can be used acro
 
 > **⚠️ Initial Setup Required**: Before the Quick Links below work, the `gh-pages` branch needs to be initialized. See [GH-PAGES-SETUP.md](GH-PAGES-SETUP.md) for instructions.
 > 
-> **🌐 Custom Domain**: Want to use `dnf.xiboplayer.org` instead of the GitHub Pages URL? See [CUSTOM-DOMAIN-SETUP.md](CUSTOM-DOMAIN-SETUP.md) for complete setup instructions.
+> **🌐 Custom Domain**: Want to use `dl.xiboplayer.org` instead of the GitHub Pages URL? See [CUSTOM-DOMAIN-SETUP.md](CUSTOM-DOMAIN-SETUP.md) for complete setup instructions.
 
 ## 🔗 Quick Links
 
-- **📦 Browse Published RPMs**: https://dnf.xiboplayer.org/rpm/
-- **📦 Browse Published DEBs**: https://dnf.xiboplayer.org/deb/
-- **💿 Browse Kiosk Images**: https://dnf.xiboplayer.org/images/
+- **📦 Browse Published RPMs**: https://dl.xiboplayer.org/rpm/
+- **📦 Browse Published DEBs**: https://dl.xiboplayer.org/deb/
+- **💿 Browse Kiosk Images**: https://dl.xiboplayer.org/images/
 - **📖 Where Can I See the RPMs?**: [RPMS.md](RPMS.md)
-- **🔧 Repository Setup Script**: https://dnf.xiboplayer.org/scripts/setup-repo.sh
+- **🔧 Repository Setup Script**: https://dl.xiboplayer.org/scripts/setup-repo.sh
 
 ### Install from RPM Repository (Fedora/RHEL)
 
 ```bash
 # Quick setup
-curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash
+curl -fsSL https://dl.xiboplayer.org/scripts/setup-repo.sh | sudo bash
 
 # Install packages
 sudo dnf install xiboplayer-electron
@@ -182,7 +182,7 @@ Once your RPMs are published, users can install them from your gh-pages reposito
 sudo tee /etc/yum.repos.d/xibo-players.repo <<'EOF'
 [xibo-players]
 name=Xibo Players
-baseurl=https://dnf.xiboplayer.org/rpm/fedora/$releasever/$basearch/
+baseurl=https://dl.xiboplayer.org/rpm/fedora/$releasever/$basearch/
 enabled=1
 gpgcheck=0
 EOF
@@ -194,7 +194,7 @@ sudo dnf install your-package-name
 Or use the setup script:
 
 ```bash
-curl -fsSL https://dnf.xiboplayer.org/scripts/setup-repo.sh | sudo bash
+curl -fsSL https://dl.xiboplayer.org/scripts/setup-repo.sh | sudo bash
 ```
 
 **Repository Structure:**
@@ -433,7 +433,7 @@ jobs:
 
 **Published Images:**
 
-Images are published to gh-pages at: `https://dnf.xiboplayer.org/images/`
+Images are published to gh-pages at: `https://dl.xiboplayer.org/images/`
 
 Users can download and flash:
 ```bash
