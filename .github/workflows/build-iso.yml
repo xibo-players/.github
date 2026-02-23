@@ -80,7 +80,7 @@ jobs:
             echo "Using template mkosi configuration"
             cp scripts/mkosi/mkosi.conf.template mkosi.conf
             # Customize ImageId
-            sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}-kiosk/" mkosi.conf
+            sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}/" mkosi.conf
           fi
 
       - name: Set file permissions
@@ -103,15 +103,15 @@ jobs:
         run: |
           cd output
           # Rename raw image
-          mv *.raw ${PACKAGE}-kiosk_${VERSION}_x86_64.raw 2>/dev/null || true
+          mv *.raw ${PACKAGE}_${VERSION}_x86_64.raw 2>/dev/null || true
           
           # Create QCOW2 for VMs
-          if [ -f ${PACKAGE}-kiosk_${VERSION}_x86_64.raw ]; then
-            qemu-img convert -f raw -O qcow2 -c ${PACKAGE}-kiosk_${VERSION}_x86_64.raw ${PACKAGE}-kiosk_${VERSION}_x86_64.qcow2
-            qemu-img resize ${PACKAGE}-kiosk_${VERSION}_x86_64.qcow2 16G
+          if [ -f ${PACKAGE}_${VERSION}_x86_64.raw ]; then
+            qemu-img convert -f raw -O qcow2 -c ${PACKAGE}_${VERSION}_x86_64.raw ${PACKAGE}_${VERSION}_x86_64.qcow2
+            qemu-img resize ${PACKAGE}_${VERSION}_x86_64.qcow2 16G
             
             # Compress raw image
-            xz -T0 -9 ${PACKAGE}-kiosk_${VERSION}_x86_64.raw
+            xz -T0 -9 ${PACKAGE}_${VERSION}_x86_64.raw
           fi
 
       - name: List output
@@ -167,7 +167,7 @@ jobs:
           else
             echo "Using template mkosi configuration"
             cp scripts/mkosi/mkosi.conf.template mkosi.conf
-            sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}-kiosk/" mkosi.conf
+            sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}/" mkosi.conf
           fi
 
       - name: Set file permissions
@@ -187,9 +187,9 @@ jobs:
           PACKAGE: ${{ inputs.package-name }}
         run: |
           cd output
-          mv *.raw ${PACKAGE}-kiosk_${VERSION}_aarch64.raw 2>/dev/null || true
-          if [ -f ${PACKAGE}-kiosk_${VERSION}_aarch64.raw ]; then
-            xz -T0 -9 ${PACKAGE}-kiosk_${VERSION}_aarch64.raw
+          mv *.raw ${PACKAGE}_${VERSION}_aarch64.raw 2>/dev/null || true
+          if [ -f ${PACKAGE}_${VERSION}_aarch64.raw ]; then
+            xz -T0 -9 ${PACKAGE}_${VERSION}_aarch64.raw
           fi
 
       - name: List output
@@ -249,7 +249,7 @@ jobs:
         run: |
           mkksiso --skip-mkefiboot --ks "${{ inputs.kickstart-file }}" \
             /tmp/fedora-netinst.iso \
-            ${PACKAGE}-kiosk-installer_${VERSION}_x86_64.iso
+            ${PACKAGE}-installer_${VERSION}_x86_64.iso
 
       - name: List ISO
         run: ls -lah *.iso
@@ -318,10 +318,10 @@ jobs:
           The easiest option for any Intel/AMD computer. Flash it to a USB stick, boot from it, and the installer does the rest — formats the disk, installs everything, and reboots into a ready-to-use kiosk.
 
           **Steps:**
-          1. Download \`${PACKAGE}-kiosk-installer_${VERSION}_x86_64.iso\`
+          1. Download \`${PACKAGE}-installer_${VERSION}_x86_64.iso\`
           2. Flash it to a USB stick:
              \`\`\`
-             sudo dd if=${PACKAGE}-kiosk-installer_${VERSION}_x86_64.iso of=/dev/sdX bs=8M status=progress
+             sudo dd if=${PACKAGE}-installer_${VERSION}_x86_64.iso of=/dev/sdX bs=8M status=progress
              \`\`\`
              Or use [Balena Etcher](https://etcher.balena.io/) (Windows/Mac/Linux — just click and flash)
           3. Boot from USB and wait — installation is fully automated
@@ -334,10 +334,10 @@ jobs:
           Write directly to an SD card (or eMMC). No installer needed — just flash and boot.
 
           **Steps:**
-          1. Download \`${PACKAGE}-kiosk_${VERSION}_aarch64.raw.xz\`
+          1. Download \`${PACKAGE}_${VERSION}_aarch64.raw.xz\`
           2. Flash it to your SD card:
              \`\`\`
-             xz -dc ${PACKAGE}-kiosk_${VERSION}_aarch64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
+             xz -dc ${PACKAGE}_${VERSION}_aarch64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
              \`\`\`
              Or use [Balena Etcher](https://etcher.balena.io/) (handles .xz automatically)
           3. Insert SD card into your Pi and power on
@@ -349,14 +349,14 @@ jobs:
           Ready-to-boot VM image. No installation, no USB stick — just open and run.
 
           **Steps:**
-          1. Download \`${PACKAGE}-kiosk_${VERSION}_x86_64.qcow2\`
+          1. Download \`${PACKAGE}_${VERSION}_x86_64.qcow2\`
           2. Run it:
              - **GNOME Boxes**: File → Import → select the .qcow2 file
              - **virt-manager**: Create VM → Import existing disk → select .qcow2
              - **Proxmox**: Upload to storage, create VM with existing disk
              - **QEMU command line**:
                \`\`\`
-               qemu-system-x86_64 -enable-kvm -m 2G -drive file=${PACKAGE}-kiosk_${VERSION}_x86_64.qcow2
+               qemu-system-x86_64 -enable-kvm -m 2G -drive file=${PACKAGE}_${VERSION}_x86_64.qcow2
                \`\`\`
 
           ---
@@ -366,10 +366,10 @@ jobs:
           Write directly to the internal SSD or an SD card. Same as the Raspberry Pi image but for Intel/AMD hardware.
 
           **Steps:**
-          1. Download \`${PACKAGE}-kiosk_${VERSION}_x86_64.raw.xz\`
+          1. Download \`${PACKAGE}_${VERSION}_x86_64.raw.xz\`
           2. Flash to disk:
              \`\`\`
-             xz -dc ${PACKAGE}-kiosk_${VERSION}_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
+             xz -dc ${PACKAGE}_${VERSION}_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
              \`\`\`
              Or use [Balena Etcher](https://etcher.balena.io/)
 
