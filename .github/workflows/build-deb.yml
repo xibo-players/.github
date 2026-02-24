@@ -168,10 +168,23 @@ jobs:
           echo "Built DEBs:"
           ls -lh ${{ inputs.deb-output-dir }}/*.deb
 
+          # Check for source package files
+          shopt -s nullglob
+          src_files=(${{ inputs.deb-output-dir }}/*.dsc ${{ inputs.deb-output-dir }}/*.orig.tar.* ${{ inputs.deb-output-dir }}/*.debian.tar.*)
+          if [ ${#src_files[@]} -gt 0 ]; then
+            echo ""
+            echo "Source package files:"
+            ls -lh "${src_files[@]}"
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.package-name }}-deb-${{ matrix.arch }}
-          path: ${{ inputs.deb-output-dir }}/*.deb
+          path: |
+            ${{ inputs.deb-output-dir }}/*.deb
+            ${{ inputs.deb-output-dir }}/*.dsc
+            ${{ inputs.deb-output-dir }}/*.orig.tar.*
+            ${{ inputs.deb-output-dir }}/*.debian.tar.*
           retention-days: 30
 
   sign:
@@ -245,6 +258,9 @@ jobs:
           body_path: /tmp/release-body.md
           files: |
             dist/*.deb
+            dist/*.dsc
+            dist/*.orig.tar.*
+            dist/*.debian.tar.*
             dist/DEB-GPG-KEY-*
           draft: false
           prerelease: false

@@ -210,12 +210,13 @@ jobs:
                 ;;
             esac
 
-            # Build the RPM
-            rpmbuild -bb "$SPEC_FILE"
+            # Build binary RPM + SRPM
+            rpmbuild -ba "$SPEC_FILE"
 
-            # Copy built RPMs to output directory
+            # Copy built RPMs and SRPMs to output directory
             mkdir -p ${{ inputs.rpm-output-dir }}
             find ~/rpmbuild/RPMS/ -name "*.rpm" -exec cp {} ${{ inputs.rpm-output-dir }}/ \;
+            find ~/rpmbuild/SRPMS/ -name "*.src.rpm" -exec cp {} ${{ inputs.rpm-output-dir }}/ \;
 
             echo "RPM build completed from spec file"
 
