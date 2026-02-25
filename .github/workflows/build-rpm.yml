@@ -317,11 +317,24 @@ jobs:
 
           echo "%_gpg_name ${GPG_KEY_ID}" >> ~/.rpmmacros
 
-          # Sign all RPMs
+          # Sign all RPMs (binary RPMs must succeed; SRPMs may have
+          # corrupt payload checksums for large packages, so warn only)
+          sign_failed=0
           for rpm_file in rpms/*.rpm; do
             echo "Signing: $(basename $rpm_file)"
-            rpm --addsign "$rpm_file"
+            if rpm --addsign "$rpm_file"; then
+              echo "  ✓ Signed successfully"
+            elif [[ "$rpm_file" == *.src.rpm ]]; then
+              echo "  ⚠ WARNING: Failed to sign SRPM (corrupt payload checksum?), skipping"
+            else
+              echo "  ✗ ERROR: Failed to sign binary RPM"
+              sign_failed=1
+            fi
           done
+          if [ "$sign_failed" -eq 1 ]; then
+            echo "ERROR: One or more binary RPMs failed to sign"
+            exit 1
+          fi
 
           # Clean up passphrase
           rm -f /tmp/.gpg-passphrase
