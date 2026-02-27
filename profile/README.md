@@ -33,8 +33,8 @@ Already running Fedora or Ubuntu? Add our repo and install with one command.
 
 **Fedora 43**
 ```bash
-sudo dnf config-manager addrepo \
-  --from-repofile=https://dl.xiboplayer.org/rpm/xibo-players.repo
+sudo dnf install \
+  https://github.com/xibo-players/xibo-players.github.io/releases/download/v43-5/xiboplayer-release-43-5.noarch.rpm
 
 sudo dnf install xibo-kiosk            # Full kiosk OS
 sudo dnf install xiboplayer-electron   # Electron player
