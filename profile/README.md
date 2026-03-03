@@ -1,45 +1,47 @@
-# Xibo Players
+<img alt="XiboPlayer" src="https://dl.xiboplayer.org/logo-192.png" width="64">
 
-Open-source digital signage players for [Xibo CMS](https://xibosignage.com). Turn any PC, Raspberry Pi, or browser into a signage display.
+### Open-source digital signage players for [Xibo CMS](https://xibosignage.com)
 
-> **Disclaimer:** This is an independent community project. Not affiliated with [Xibo Signage Ltd](https://xibosignage.com) or the Xibo Digital Signage project. Xibo is a registered trademark of Xibo Ltd.
+Turn any Linux PC, Raspberry Pi, or web browser into a digital signage display. Cross-platform, offline-first, and built on a modular TypeScript SDK with 1243 tests.
 
-## Players
+> **Community project** — not affiliated with Xibo Signage Ltd. [Xibo](https://xibosignage.com) is a trademark of Xibo Ltd.
 
-| Player | Description | Platform |
-|--------|-------------|----------|
-| **[PWA Player](https://github.com/xibo-players/xiboplayer-pwa)** | Browser-based player — the engine that powers all other players. Offline-first with Service Worker caching. Supports video, images, PDF, tickers, web pages, HLS. | Any browser |
-| **[Electron Player](https://github.com/xibo-players/xiboplayer-electron)** | Desktop app wrapping the PWA. Standalone window with DevTools. Best for development and testing. | RPM / DEB |
-| **[Chromium Kiosk](https://github.com/xibo-players/xiboplayer-chromium)** | Locked-down Chromium running the PWA. Lightweight alternative to Electron. | RPM / DEB |
-| **[Xibo Kiosk](https://github.com/xibo-players/xibo-kiosk)** | Complete kiosk OS — GNOME Kiosk session with auto-login, registration wizard, health monitoring. Pre-built bootable images for PCs and Raspberry Pi. | RPM / DEB / ISO / QCOW2 |
-| **[arexibo](https://github.com/xibo-players/arexibo)** | Native Rust player with Qt6 WebEngine. High performance, x86_64 + aarch64. | RPM / DEB |
+---
 
-## Getting started
+## Quickstart: flash and boot
 
-The easiest way is to download a pre-built kiosk image — flash it, boot and connect to your CMS:
+Download a [pre-built kiosk image](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest), flash it, and connect to your CMS. That's it.
 
-| Hardware | Image | What to do |
-|----------|-------|------------|
-| **PC or laptop** | [Installer ISO](https://github.com/xibo-players/xibo-kiosk/releases/latest) | Flash to USB with [Balena Etcher](https://etcher.balena.io/), boot — automated install |
-| **Raspberry Pi 4/5** | [Raw aarch64](https://github.com/xibo-players/xibo-kiosk/releases/latest) | Flash `.raw.xz` to SD card, insert, power on |
-| **Virtual machine** | [QCOW2](https://github.com/xibo-players/xibo-kiosk/releases/latest) | Open in GNOME Boxes, virt-manager, Proxmox, or QEMU |
-| **Intel NUC / embedded** | [Raw x86_64](https://github.com/xibo-players/xibo-kiosk/releases/latest) | Flash `.raw.xz` to SSD or SD card |
+| Hardware | Image | Instructions |
+|----------|-------|--------------|
+| PC / laptop | [ISO installer](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest) | Flash to USB, boot — fully automated install |
+| Raspberry Pi 4/5 | [Raw aarch64](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest) | Flash `.raw.xz` to SD card, insert, power on |
+| Virtual machine | [QCOW2](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest) | Open in GNOME Boxes, virt-manager, Proxmox, or QEMU |
+| Intel NUC / embedded | [Raw x86_64](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest) | Flash `.raw.xz` to SSD or SD card |
 
-**After booting:** log in with `xibo` / `xibo`, change your password, connect to your CMS from the setup screen.
+Default login: `xibo` / `xibo` — change your password, then connect to your CMS from the setup screen.
 
-## Install packages on existing Linux
+## Choose your player
 
-Already running Fedora or Ubuntu? Add our repo and install with one command.
+| Player | What it does | Platforms |
+|--------|-------------|-----------|
+| [**Electron**](https://github.com/xibo-players/xiboplayer-electron) | Self-contained desktop app with built-in browser. Production-ready kiosk with GPU acceleration, systemd integration, and multi-instance support. | RPM, DEB — x86_64, aarch64 |
+| [**Chromium Kiosk**](https://github.com/xibo-players/xiboplayer-chromium) | Lightweight — uses the system Chromium browser. Smallest footprint (~5 MB). | RPM, DEB — noarch |
+| [**PWA**](https://github.com/xibo-players/xiboplayer/tree/main/packages/pwa) | Browser-based engine that powers all players. Deploy on your CMS and open a URL — zero installation. | Any modern browser |
+| [**Xibo Kiosk**](https://github.com/xibo-players/xiboplayer-kiosk) | Complete kiosk OS — GNOME Kiosk session with auto-login, registration wizard, health monitoring. Pre-built bootable images. | ISO, QCOW2, raw |
+| [**arexibo**](https://github.com/xibo-players/arexibo) | Native Rust player with Qt6 WebEngine. Serial port control for industrial signage. | RPM, DEB — x86_64, aarch64 |
 
-**Fedora 43**
+## Install on existing Linux
+
+**Fedora 43+**
 ```bash
 sudo dnf install \
   https://github.com/xibo-players/xibo-players.github.io/releases/download/v43-5/xiboplayer-release-43-5.noarch.rpm
 
-sudo dnf install xibo-kiosk            # Full kiosk OS
-sudo dnf install xiboplayer-electron   # Electron player
-sudo dnf install xiboplayer-chromium   # Chromium kiosk
-sudo dnf install arexibo               # Native Rust player
+sudo dnf install xiboplayer-kiosk        # Full kiosk environment
+sudo dnf install xiboplayer-electron     # Electron player
+sudo dnf install xiboplayer-chromium     # Chromium kiosk
+sudo dnf install arexibo                 # Native Rust player
 ```
 
 **Ubuntu 24.04**
@@ -50,18 +52,23 @@ curl -fsSL https://dl.xiboplayer.org/deb/GPG-KEY.asc \
 sudo curl -fsSL https://dl.xiboplayer.org/deb/xibo-players.sources \
   -o /etc/apt/sources.list.d/xibo-players.sources
 
-sudo apt update && sudo apt install xibo-kiosk
+sudo apt update && sudo apt install xiboplayer-kiosk
 ```
 
 ## SDK
 
-All players are built on the **[@xiboplayer SDK](https://github.com/xibo-players/xiboplayer)** — a modular TypeScript library with packages for caching, rendering, scheduling, XMDS communication, XMR real-time commands, and more. Published to [npm](https://www.npmjs.com/org/xiboplayer).
+All players are built on the **[@xiboplayer SDK](https://github.com/xibo-players/xiboplayer)** — 15 modular TypeScript packages for caching, rendering, scheduling, CMS communication (SOAP + REST), XMR real-time commands, multi-display sync, and more.
 
-An [MCP Server](https://github.com/xibo-players/xiboplayer/tree/main/mcp-server) is available for AI-assisted development with the SDK.
+```bash
+npm install @xiboplayer/core @xiboplayer/renderer @xiboplayer/cache @xiboplayer/schedule @xiboplayer/xmds
+```
 
 ## Links
 
-- **[dl.xiboplayer.org](https://dl.xiboplayer.org)** — Browse packages, images, and setup instructions
-- **[Feature comparison](https://github.com/xibo-players/xibo-players.github.io/blob/main/docs/FEATURE_COMPARISON.md)** — Detailed comparison vs upstream XLR, Windows, and Arexibo players
-- **[Kiosk images](https://github.com/xibo-players/xibo-kiosk/releases/latest)** — Download bootable ISO, QCOW2, and raw images
-- **[npm packages](https://www.npmjs.com/org/xiboplayer)** — SDK packages on npm
+| | |
+|---|---|
+| **[xiboplayer.org](https://xiboplayer.org)** | Documentation, features, and guides |
+| **[dl.xiboplayer.org](https://dl.xiboplayer.org)** | Browse packages, images, and setup instructions |
+| **[Feature comparison](https://dl.xiboplayer.org/docs/FEATURE_COMPARISON)** | ~96% parity with unique capabilities vs upstream players |
+| **[npm packages](https://www.npmjs.com/org/xiboplayer)** | 15 SDK packages on npm |
+| **[AI Campaign Creator](https://github.com/xibo-players/xiboplayer-ai)** | Chat-based content creation via MCP server |
