@@ -146,6 +146,12 @@ jobs:
             echo "release=1" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Fetch shared packaging library
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/xibo-players/.github/main/scripts/packaging/lib-deb.sh \
+            -o /tmp/lib-deb.sh
+          echo "PKG_LIB_DEB=/tmp/lib-deb.sh" >> "$GITHUB_ENV"
+
       - name: Build DEB
         shell: bash
         run: |
