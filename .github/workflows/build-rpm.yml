@@ -153,6 +153,12 @@ jobs:
             echo "release=0.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Fetch shared packaging library
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/xibo-players/.github/main/scripts/packaging/lib-rpm.sh \
+            -o /tmp/lib-rpm.sh
+          echo "PKG_LIB_RPM=/tmp/lib-rpm.sh" >> "$GITHUB_ENV"
+
       - name: Build RPM
         shell: bash
         run: |
