@@ -2,7 +2,7 @@
 
 ### Open-source digital signage players for [Xibo CMS](https://xibosignage.com)
 
-Turn any Linux PC, Raspberry Pi, or web browser into a digital signage display. Cross-platform, offline-first, and built on a modular TypeScript SDK with 1243 tests.
+Turn any Linux PC, Raspberry Pi, or web browser into a digital signage display. Cross-platform, offline-first, cross-device video walls, and built on a modular TypeScript SDK with 1412 tests.
 
 > **Community project** — not affiliated with Xibo Signage Ltd. [Xibo](https://xibosignage.com) is a trademark of Xibo Ltd.
 
@@ -57,7 +57,7 @@ sudo apt update && sudo apt install xiboplayer-kiosk
 
 ## SDK
 
-All players are built on the **[@xiboplayer SDK](https://github.com/xibo-players/xiboplayer)** — 15 modular TypeScript packages for caching, rendering, scheduling, CMS communication (SOAP + REST), XMR real-time commands, multi-display sync, and more.
+All players are built on the **[@xiboplayer SDK](https://github.com/xibo-players/xiboplayer)** — 13 modular TypeScript packages for caching, rendering, scheduling, CMS communication (SOAP + REST), XMR real-time commands, multi-display sync, and more.
 
 ```bash
 npm install @xiboplayer/core @xiboplayer/renderer @xiboplayer/cache @xiboplayer/schedule @xiboplayer/xmds
@@ -70,5 +70,4 @@ npm install @xiboplayer/core @xiboplayer/renderer @xiboplayer/cache @xiboplayer/
 | **[xiboplayer.org](https://xiboplayer.org)** | Documentation, features, and guides |
 | **[dl.xiboplayer.org](https://dl.xiboplayer.org)** | Browse packages, images, and setup instructions |
 | **[Feature comparison](https://dl.xiboplayer.org/docs/FEATURE_COMPARISON)** | ~96% parity with unique capabilities vs upstream players |
-| **[npm packages](https://www.npmjs.com/org/xiboplayer)** | 15 SDK packages on npm |
-| **[AI Campaign Creator](https://github.com/xibo-players/xiboplayer-ai)** | Chat-based content creation via MCP server |
+| **[npm packages](https://www.npmjs.com/org/xiboplayer)** | 13 SDK packages on npm |
