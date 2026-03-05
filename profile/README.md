@@ -69,5 +69,5 @@ npm install @xiboplayer/core @xiboplayer/renderer @xiboplayer/cache @xiboplayer/
 |---|---|
 | **[xiboplayer.org](https://xiboplayer.org)** | Documentation, features, and guides |
 | **[dl.xiboplayer.org](https://dl.xiboplayer.org)** | Browse packages, images, and setup instructions |
-| **[Feature comparison](https://dl.xiboplayer.org/docs/FEATURE_COMPARISON)** | ~99% parity with unique capabilities vs upstream players |
+| **[Feature comparison](https://dl.xiboplayer.org/docs/FEATURE_COMPARISON)** | 100% parity with unique capabilities vs upstream players |
 | **[npm packages](https://www.npmjs.com/org/xiboplayer)** | 13 SDK packages on npm |
