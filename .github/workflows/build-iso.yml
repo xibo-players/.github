@@ -308,6 +308,7 @@ jobs:
           PACKAGE: ${{ inputs.package-name }}
         run: |
           livemedia-creator \
+            --make-iso \
             --ks /tmp/flat.ks \
             --no-virt \
             --resultdir /tmp/lmc-result \
@@ -319,6 +320,7 @@ jobs:
             --macboot || \
           (echo "Retrying after transient failure..." && sleep 10 && \
            livemedia-creator \
+            --make-iso \
             --ks /tmp/flat.ks \
             --no-virt \
             --resultdir /tmp/lmc-result \
