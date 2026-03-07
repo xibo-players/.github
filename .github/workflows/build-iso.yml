@@ -27,6 +27,10 @@ on:
         type: string
         default: 'x86_64'
         description: 'Comma-separated list of architectures (x86_64, aarch64)'
+      build-self-contained-iso:
+        type: boolean
+        default: false
+        description: 'Build self-contained ISO with all packages included (no network needed)'
       default-version:
         type: string
         default: '0.2.0'
@@ -260,10 +264,84 @@ jobs:
           path: "*.iso"
           retention-days: 30
 
+  build-self-contained-iso:
+    if: inputs.build-self-contained-iso == true
+    name: Build Self-Contained ISO
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:43
+      options: --privileged
+
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y \
+            lorax lorax-lmc-novirt pykickstart \
+            anaconda-core anaconda-install-env-deps \
+            curl createrepo_c
+
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Flatten kickstart for livemedia-creator
+        run: |
+          ksflatten -c "${{ inputs.kickstart-file }}" -o /tmp/flat.ks
+          # Add repo directives so all packages are available offline in the ISO
+          # The kickstart %packages section defines what gets installed
+          # livemedia-creator pulls everything into the ISO
+          cat /tmp/flat.ks
+
+      - name: Build self-contained ISO with livemedia-creator
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          livemedia-creator \
+            --ks /tmp/flat.ks \
+            --no-virt \
+            --resultdir /tmp/lmc-result \
+            --project "$PACKAGE" \
+            --releasever 43 \
+            --volid "${PACKAGE}-${VERSION}" \
+            --iso-only \
+            --iso-name ${PACKAGE}-full_${VERSION}_x86_64.iso \
+            --macboot || \
+          (echo "Retrying after transient failure..." && sleep 10 && \
+           livemedia-creator \
+            --ks /tmp/flat.ks \
+            --no-virt \
+            --resultdir /tmp/lmc-result \
+            --project "$PACKAGE" \
+            --releasever 43 \
+            --volid "${PACKAGE}-${VERSION}" \
+            --iso-only \
+            --iso-name ${PACKAGE}-full_${VERSION}_x86_64.iso \
+            --macboot)
+
+      - name: List ISO
+        run: ls -lah /tmp/lmc-result/*.iso
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-self-contained-iso
+          path: /tmp/lmc-result/*.iso
+          retention-days: 30
+
   release:
     name: Create GitHub Release
-    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-installer-iso]
-    if: always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-installer-iso.result == 'success')
+    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-installer-iso, build-self-contained-iso]
+    if: always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-installer-iso.result == 'success' || needs.build-self-contained-iso.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
