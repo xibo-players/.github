@@ -297,9 +297,8 @@ jobs:
       - name: Flatten kickstart for livemedia-creator
         run: |
           ksflatten -c "${{ inputs.kickstart-file }}" -o /tmp/flat.ks
-          # Add repo directives so all packages are available offline in the ISO
-          # The kickstart %packages section defines what gets installed
-          # livemedia-creator pulls everything into the ISO
+          # dracut-live is required by livemedia-creator for live ISO builds
+          sed -i '/%packages/a dracut-live' /tmp/flat.ks
           cat /tmp/flat.ks
 
       - name: Build self-contained ISO with livemedia-creator
@@ -319,6 +318,7 @@ jobs:
             --iso-name ${PACKAGE}-full_${VERSION}_x86_64.iso \
             --macboot || \
           (echo "Retrying after transient failure..." && sleep 10 && \
+           rm -rf /tmp/lmc-result && \
            livemedia-creator \
             --make-iso \
             --ks /tmp/flat.ks \
