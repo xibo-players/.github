@@ -18,10 +18,6 @@ on:
         type: string
         default: 'pnpm publish --no-git-checks --access public --provenance'
         description: 'Publish command. For monorepos use: pnpm -r publish --no-git-checks --access public --provenance'
-    secrets:
-      npm-token:
-        required: false
-        description: 'NPM_TOKEN for npm authentication (optional with trusted publishing)'
 
 jobs:
   publish:
@@ -44,12 +40,4 @@ jobs:
 
       - run: ${{ inputs.install-command }}
 
-      - name: Publish with token
-        if: ${{ secrets.npm-token != '' }}
-        run: ${{ inputs.publish-command }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
-
-      - name: Publish with trusted publishing (OIDC)
-        if: ${{ secrets.npm-token == '' }}
-        run: ${{ inputs.publish-command }}
+      - run: ${{ inputs.publish-command }}
