@@ -20,8 +20,8 @@ on:
         description: 'Publish command. For monorepos use: pnpm -r publish --no-git-checks --access public --provenance'
     secrets:
       npm-token:
-        required: true
-        description: 'NPM_TOKEN for npm authentication'
+        required: false
+        description: 'NPM_TOKEN for npm authentication (optional with trusted publishing)'
 
 jobs:
   publish:
@@ -46,4 +46,4 @@ jobs:
 
       - run: ${{ inputs.publish-command }}
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
+          NODE_AUTH_TOKEN: ${{ secrets.npm-token || '' }}
