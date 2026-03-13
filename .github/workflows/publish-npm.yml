@@ -44,6 +44,12 @@ jobs:
 
       - run: ${{ inputs.install-command }}
 
-      - run: ${{ inputs.publish-command }}
+      - name: Publish with token
+        if: ${{ secrets.npm-token != '' }}
+        run: ${{ inputs.publish-command }}
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.npm-token || '' }}
+          NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
+
+      - name: Publish with trusted publishing (OIDC)
+        if: ${{ secrets.npm-token == '' }}
+        run: ${{ inputs.publish-command }}
