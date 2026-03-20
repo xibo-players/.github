@@ -40,7 +40,11 @@ on:
       ubuntu-version:
         type: string
         default: '24.04'
-        description: 'Ubuntu version for repository structure'
+        description: 'DEPRECATED: Use distro-matrix instead. Ubuntu version for repository structure.'
+      distro-matrix:
+        type: string
+        default: ''
+        description: 'JSON array of distro:version pairs (e.g. ["ubuntu:24.04", "debian:trixie"]). Overrides ubuntu-version.'
       arch-matrix:
         type: string
         default: '["amd64"]'
@@ -66,16 +70,24 @@ on:
 
 jobs:
   build:
-    name: Build DEB (${{ matrix.arch }})
+    name: Build DEB (${{ matrix.distro }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     container:
-      image: ubuntu:${{ inputs.ubuntu-version || '24.04' }}
+      image: ${{ matrix.distro }}
     strategy:
       matrix:
+        distro: ${{ fromJSON(inputs.distro-matrix || format('["ubuntu:{0}"]', inputs.ubuntu-version || '24.04')) }}
         arch: ${{ fromJSON(inputs.arch-matrix) }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Compute distro tag
+        id: distro
+        run: |
+          # Convert "ubuntu:24.04" → "ubuntu2404", "debian:trixie" → "debiantrixie"
+          tag=$(echo "${{ matrix.distro }}" | tr -d ':.')
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Install deb tools
         run: |
@@ -183,9 +195,18 @@ jobs:
             ls -lh "${src_files[@]}"
           fi
 
+      - name: Tag output files with distro
+        run: |
+          tag="${{ steps.distro.outputs.tag }}"
+          cd "${{ inputs.deb-output-dir }}"
+          shopt -s nullglob
+          for f in *.deb *.dsc *.orig.tar.* *.debian.tar.*; do
+            mv "$f" "${tag}.${f}"
+          done
+
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.package-name }}-deb-${{ matrix.arch }}
+          name: ${{ inputs.package-name }}-deb-${{ steps.distro.outputs.tag }}-${{ matrix.arch }}
           path: |
             ${{ inputs.deb-output-dir }}/*.deb
             ${{ inputs.deb-output-dir }}/*.dsc
