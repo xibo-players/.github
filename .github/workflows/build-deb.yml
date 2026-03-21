@@ -74,6 +74,9 @@ jobs:
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     container:
       image: ${{ matrix.distro }}
+    defaults:
+      run:
+        shell: bash
     strategy:
       matrix:
         distro: ${{ fromJSON(inputs.distro-matrix || format('["ubuntu:{0}"]', inputs.ubuntu-version || '24.04')) }}
@@ -121,7 +124,6 @@ jobs:
 
       - name: Determine version and release
         id: version
-        shell: bash
         run: |
           # Parse version from build script defaults (single source of truth)
           parse_build_script_version() {
@@ -165,7 +167,6 @@ jobs:
           echo "PKG_LIB_DEB=/tmp/lib-deb.sh" >> "$GITHUB_ENV"
 
       - name: Build DEB
-        shell: bash
         run: |
           if [ -f "${{ inputs.deb-script }}" ]; then
             chmod +x ${{ inputs.deb-script }}
