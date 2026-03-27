@@ -97,7 +97,7 @@ pkg_write_control() {
         echo "Maintainer: ${PKG_MAINTAINER:-Pau Aliagas <linuxnow@gmail.com>}"
         echo "Description: ${PKG_DESCRIPTION}"
         [[ -n "${PKG_DESCRIPTION_LONG:-}" ]] && echo "${PKG_DESCRIPTION_LONG}"
-        echo "Homepage: ${PKG_HOMEPAGE:-https://xiboplayer.org}"
+        echo "Homepage: ${PKG_HOMEPAGE:-https://www.xiboplayer.org}"
     } > "$PKGDIR/DEBIAN/control"
 }
 
@@ -186,7 +186,7 @@ pkg_build_source_deb() {
         echo "Maintainer: ${PKG_MAINTAINER:-Pau Aliagas <linuxnow@gmail.com>}"
         echo "Build-Depends: ${build_depends}"
         echo "Standards-Version: 4.6.0"
-        echo "Homepage: ${PKG_HOMEPAGE:-https://xiboplayer.org}"
+        echo "Homepage: ${PKG_HOMEPAGE:-https://www.xiboplayer.org}"
         echo ""
         echo "Package: ${PKG_NAME}"
         echo "Architecture: ${src_arch}"

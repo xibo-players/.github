@@ -2,7 +2,7 @@
 
 ### Open-source digital signage players for [Xibo CMS](https://xibosignage.com)
 
-Turn any Linux PC, Raspberry Pi, or web browser into a digital signage display. Cross-platform, offline-first, cross-device video walls, and built on a modular TypeScript SDK with 1412 tests.
+Turn any Linux PC, Raspberry Pi, or web browser into a digital signage display. Cross-platform, offline-first, cross-device video walls, and built on a modular TypeScript SDK with 1629 tests.
 
 > **Community project** — not affiliated with Xibo Signage Ltd. [Xibo](https://xibosignage.com) is a trademark of Xibo Ltd.
 
@@ -44,7 +44,7 @@ sudo dnf install xiboplayer-chromium     # Chromium kiosk
 sudo dnf install arexibo                 # Native Rust player
 ```
 
-**Ubuntu 24.04**
+**Ubuntu 24.04 / Debian Trixie**
 ```bash
 curl -fsSL https://dl.xiboplayer.org/deb/GPG-KEY.asc \
   | sudo gpg --dearmor -o /usr/share/keyrings/xibo-players.gpg
@@ -57,7 +57,7 @@ sudo apt update && sudo apt install xiboplayer-kiosk
 
 ## SDK
 
-All players are built on the **[@xiboplayer SDK](https://github.com/xibo-players/xiboplayer)** — 13 modular TypeScript packages for caching, rendering, scheduling, CMS communication (SOAP + REST), XMR real-time commands, multi-display sync, and more.
+All players are built on the **[@xiboplayer SDK](https://github.com/xibo-players/xiboplayer)** — 14 modular TypeScript packages for caching, rendering, scheduling, CMS communication (SOAP + REST), XMR real-time commands, multi-display sync, and more.
 
 ```bash
 npm install @xiboplayer/core @xiboplayer/renderer @xiboplayer/cache @xiboplayer/schedule @xiboplayer/xmds
@@ -67,7 +67,7 @@ npm install @xiboplayer/core @xiboplayer/renderer @xiboplayer/cache @xiboplayer/
 
 | | |
 |---|---|
-| **[xiboplayer.org](https://xiboplayer.org)** | Documentation, features, and guides |
+| **[www.xiboplayer.org](https://www.xiboplayer.org)** | Documentation, features, and guides |
 | **[dl.xiboplayer.org](https://dl.xiboplayer.org)** | Browse packages, images, and setup instructions |
 | **[Feature comparison](https://dl.xiboplayer.org/docs/FEATURE_COMPARISON)** | 100% parity with unique capabilities vs upstream players |
-| **[npm packages](https://www.npmjs.com/org/xiboplayer)** | 13 SDK packages on npm |
+| **[npm packages](https://www.npmjs.com/org/xiboplayer)** | 14 SDK packages on npm |
