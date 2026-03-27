@@ -40,7 +40,7 @@ on:
       ubuntu-version:
         type: string
         default: '24.04'
-        description: 'DEPRECATED: Use distro-matrix instead. Ubuntu version for repository structure.'
+        description: 'Ubuntu version for single-distro builds (use distro-matrix for multi-distro)'
       distro-matrix:
         type: string
         default: ''

@@ -44,7 +44,11 @@ on:
       fedora-version:
         type: string
         default: '43'
-        description: 'Fedora version number for repository structure'
+        description: 'Fedora version for single-version builds (use fedora-matrix for multi-version)'
+      fedora-matrix:
+        type: string
+        default: ''
+        description: 'JSON array of Fedora versions (e.g. ["43", "44"]). Overrides fedora-version.'
       arch-matrix:
         type: string
         default: '["x86_64"]'
@@ -73,16 +77,22 @@ on:
 
 jobs:
   build:
-    name: Build RPM (${{ matrix.arch }})
+    name: Build RPM (fc${{ matrix.fedora }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     container:
-      image: fedora:${{ inputs.fedora-version || '43' }}
+      image: fedora:${{ matrix.fedora }}
     strategy:
       matrix:
+        fedora: ${{ fromJSON(inputs.fedora-matrix || format('["{0}"]', inputs.fedora-version || '43')) }}
         arch: ${{ fromJSON(inputs.arch-matrix) }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Compute Fedora tag
+        id: fedora
+        run: |
+          echo "tag=fc${{ matrix.fedora }}" >> "$GITHUB_OUTPUT"
 
       - name: Install rpm tools
         run: dnf install -y rpm-build rpmdevtools createrepo_c git tar gzip
@@ -242,9 +252,18 @@ jobs:
           echo "Built RPMs:"
           ls -lh ${{ inputs.rpm-output-dir }}/*.rpm
 
+      - name: Tag output files with Fedora version
+        run: |
+          tag="${{ steps.fedora.outputs.tag }}"
+          cd "${{ inputs.rpm-output-dir }}"
+          shopt -s nullglob
+          for f in *.rpm; do
+            mv "$f" "${tag}.${f}"
+          done
+
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.package-name }}-rpm-${{ matrix.arch }}
+          name: ${{ inputs.package-name }}-rpm-${{ steps.fedora.outputs.tag }}-${{ matrix.arch }}
           path: ${{ inputs.rpm-output-dir }}/*.rpm
           retention-days: 30
 
