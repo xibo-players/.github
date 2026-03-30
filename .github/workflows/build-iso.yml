@@ -235,10 +235,10 @@ jobs:
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Download Fedora netinstall ISO
+      - name: Download Fedora Workstation Live ISO
         run: |
-          curl -L -o /tmp/fedora-netinst.iso \
-            "https://ftp.plusline.net/fedora/linux/releases/43/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-43-1.6.iso"
+          curl -L -o /tmp/fedora-workstation.iso \
+            "https://ftp.plusline.net/fedora/linux/releases/43/Workstation/x86_64/iso/Fedora-Workstation-Live-43-1.6.x86_64.iso"
 
       - name: Validate Kickstart file
         run: |
@@ -255,8 +255,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
-          mkksiso --skip-mkefiboot --ks "${{ inputs.kickstart-file }}" \
-            /tmp/fedora-netinst.iso \
+          mkksiso --ks "${{ inputs.kickstart-file }}" \
+            /tmp/fedora-workstation.iso \
             ${PACKAGE}-installer_${VERSION}_x86_64.iso
 
       - name: List ISO
@@ -313,76 +313,75 @@ jobs:
             https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-43.noarch.rpm \
             https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-43.noarch.rpm
 
-      - name: Download all packages to local repo
+      - name: Download extra packages not on Workstation ISO
         run: |
           mkdir -p /tmp/local-repo
+
+          # Workstation Live already has: GNOME, Wayland, GDM, NetworkManager,
+          # kernel, grub, firefox, fonts, hardware-support, etc.
+          # We only need our extras + media packages not on Workstation.
 
           # Parse packages from kickstart %packages section
           KS_PACKAGES=$(sed -n '/%packages/,/%end/p' "${{ inputs.kickstart-file }}" | \
             grep -v '^%\|^#\|^-\|^@' | tr -s '\n' ' ')
 
-          # Add post-install packages (from %post dnf install commands)
+          # Post-install packages (from %post dnf install commands)
           POST_PACKAGES=$(grep 'dnf install -y' "${{ inputs.kickstart-file }}" | \
             grep -v 'rpmfusion\|release' | sed 's/.*dnf install -y //' | tr -s '\n' ' ')
 
-          # Add kickstart @groups as individual packages
-          KS_GROUPS=$(sed -n '/%packages/,/%end/p' "${{ inputs.kickstart-file }}" | \
-            grep '^@' | sed 's/^@//' | tr -s '\n' ' ')
-
           ALL_PACKAGES="$KS_PACKAGES $POST_PACKAGES"
-          echo "Downloading packages: $ALL_PACKAGES"
-          echo "Groups: $KS_GROUPS"
+          echo "Downloading extra packages: $ALL_PACKAGES"
 
-          # Download all packages with dependencies
+          # Download with all dependencies
           dnf download --resolve --alldeps --destdir=/tmp/local-repo \
             $ALL_PACKAGES || true
 
-          # Also download group packages
-          for group in $KS_GROUPS; do
-            dnf group info "$group" 2>/dev/null | \
-              grep -E '^\s+' | awk '{print $1}' | \
-              xargs -r dnf download --resolve --destdir=/tmp/local-repo 2>/dev/null || true
-          done
-
           # Create repo metadata
           createrepo_c /tmp/local-repo
-          echo "Local repo: $(ls /tmp/local-repo/*.rpm | wc -l) packages"
+          PKG_COUNT=$(ls /tmp/local-repo/*.rpm 2>/dev/null | wc -l)
+          REPO_SIZE=$(du -sh /tmp/local-repo | cut -f1)
+          echo "Local repo: $PKG_COUNT packages, $REPO_SIZE"
 
-      - name: Create self-contained kickstart
+      - name: Create offline kickstart
         run: |
-          # Copy kickstart and modify for offline install
           cp "${{ inputs.kickstart-file }}" /tmp/selfcontained.ks
 
-          # Remove any existing url/repo lines and add local repo
+          # Remove network install source
           sed -i '/^url /d; /^repo /d' /tmp/selfcontained.ks
 
-          # Add harddrive install source (packages on the ISO itself)
-          sed -i '/^skipx/a harddrive --partition=LABEL=OEMDRV --dir=/' /tmp/selfcontained.ks
+          # Add local repo for extra packages embedded on the ISO
+          sed -i '/^skipx/a repo --name=local-extras --baseurl=file:///run/install/repo/local-repo/' /tmp/selfcontained.ks
 
-          cat /tmp/selfcontained.ks
+          echo "=== Offline kickstart ==="
+          head -30 /tmp/selfcontained.ks
 
-      - name: Download Fedora netinstall ISO
+      - name: Download Fedora Workstation Live ISO
         run: |
-          curl -L -o /tmp/fedora-netinst.iso \
-            "https://ftp.plusline.net/fedora/linux/releases/43/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-43-1.6.iso"
+          curl -L -o /tmp/fedora-workstation.iso \
+            "https://ftp.plusline.net/fedora/linux/releases/43/Workstation/x86_64/iso/Fedora-Workstation-Live-43-1.6.x86_64.iso"
 
       - name: Build self-contained ISO
         env:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
-          # Embed kickstart + local repo into the ISO
+          # Embed kickstart + extra package repo into Workstation ISO
+          mkdir -p /tmp/iso-extra/local-repo
+          cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
+
           mkksiso \
             --ks /tmp/selfcontained.ks \
-            --add /tmp/local-repo \
-            /tmp/fedora-netinst.iso \
+            --add /tmp/iso-extra \
+            /tmp/fedora-workstation.iso \
             ${PACKAGE}-selfcontained_${VERSION}_x86_64.iso || \
           (echo "Retrying..." && sleep 10 && \
            mkksiso \
             --ks /tmp/selfcontained.ks \
-            --add /tmp/local-repo \
-            /tmp/fedora-netinst.iso \
+            --add /tmp/iso-extra \
+            /tmp/fedora-workstation.iso \
             ${PACKAGE}-selfcontained_${VERSION}_x86_64.iso)
+
+          ls -lah ${PACKAGE}-selfcontained_${VERSION}_x86_64.iso
 
       - name: List ISO
         run: ls -lah *.iso
