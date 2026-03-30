@@ -385,7 +385,6 @@ jobs:
             echo "Uploading $FILENAME → s3://xiboplayer-images/${KEY}"
             aws s3 cp "$file" "s3://xiboplayer-images/${KEY}" \
               --endpoint-url "$R2_ENDPOINT" \
-              --no-sign-request=false
           done
 
           # Also copy latest version marker
