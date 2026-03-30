@@ -25,18 +25,10 @@ on:
       default-version:
         type: string
         default: '0.2.0'
-      release-body:
-        type: string
-        default: ''
-        description: 'Custom release body markdown. Empty = auto-generated.'
       publish-to-repo:
         type: boolean
         default: true
-        description: 'Publish DEBs to gh-pages repository (default: true for all builds)'
-      create-github-release:
-        type: boolean
-        default: true
-        description: 'Create GitHub Release for tags (default: true, only runs on tags)'
+        description: 'Publish DEBs to package repository (default: true for all builds)'
       ubuntu-version:
         type: string
         default: '24.04'
@@ -67,6 +59,12 @@ on:
       PAGES_TOKEN:
         required: false
         description: 'PAT with contents:write on xibo-players.github.io for central repo publishing'
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+      R2_ENDPOINT:
+        required: false
 
 jobs:
   build:
@@ -250,53 +248,46 @@ jobs:
           path: debs/
           retention-days: 30
 
-  release:
-    name: Create GitHub Release
+  upload:
+    name: Upload to R2
     needs: sign
-    if: inputs.create-github-release && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download signed DEBs
+        uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.package-name }}-deb-signed
-          path: dist/
+          path: debs/
 
-      - name: Generate release body
+      - name: Upload DEBs to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          PACKAGE: ${{ inputs.package-name }}
         run: |
-          if [ -n "${{ inputs.release-body }}" ]; then
-            echo "${{ inputs.release-body }}" > /tmp/release-body.md
-          else
-            cat > /tmp/release-body.md << EOF
-          ## ${{ inputs.package-name }}
+          pip install awscli 2>/dev/null || sudo pip install awscli
 
-          ### Installation
-          \`\`\`bash
-          sudo dpkg -i ${{ inputs.package-name }}_*.deb
-          sudo apt-get install -f
-          \`\`\`
-          EOF
-          fi
+          BUCKET="s3://xiboplayer-images"
+          DEST="$BUCKET/packages/$PACKAGE/latest"
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          name: "${{ inputs.package-name }} ${{ github.ref_name }}"
-          body_path: /tmp/release-body.md
-          files: |
-            dist/*.deb
-            dist/*.dsc
-            dist/*.orig.tar.*
-            dist/*.debian.tar.*
-            dist/DEB-GPG-KEY-*
-          draft: false
-          prerelease: false
+          # Clear previous version and upload current
+          aws s3 rm "$DEST/" --recursive --endpoint-url "$R2_ENDPOINT" 2>/dev/null || true
+
+          for file in debs/*; do
+            NAME=$(basename "$file")
+            echo "Uploading $NAME"
+            aws s3 cp "$file" "$DEST/$NAME" --endpoint-url "$R2_ENDPOINT"
+          done
+
+          echo "Uploaded to: $DEST/"
+          aws s3 ls "$DEST/" --endpoint-url "$R2_ENDPOINT"
 
   notify:
     name: Trigger repository update
-    needs: release
-    if: inputs.publish-to-repo && needs.release.result == 'success'
+    needs: upload
+    if: inputs.publish-to-repo
     runs-on: ubuntu-latest
 
     steps:
@@ -308,5 +299,5 @@ jobs:
             -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/xibo-players/xibo-players.github.io/dispatches" \
-            -d '{"event_type": "update-repos", "client_payload": {"package": "${{ inputs.package-name }}", "repo": "${{ github.repository }}", "tag": "${{ github.ref_name }}"}}'
+            -d '{"event_type": "update-repos", "client_payload": {"package": "${{ inputs.package-name }}", "repo": "${{ github.repository }}"}}'
           echo "Triggered update-repos for ${{ inputs.package-name }}"

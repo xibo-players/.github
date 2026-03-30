@@ -29,18 +29,10 @@ on:
       default-version:
         type: string
         default: '0.2.0'
-      release-body:
-        type: string
-        default: ''
-        description: 'Custom release body markdown. Empty = auto-generated.'
       publish-to-repo:
         type: boolean
         default: true
-        description: 'Publish RPMs to gh-pages repository (default: true for all builds)'
-      create-github-release:
-        type: boolean
-        default: true
-        description: 'Create GitHub Release for tags (default: true, only runs on tags)'
+        description: 'Publish RPMs to package repository (default: true for all builds)'
       fedora-version:
         type: string
         default: '43'
@@ -74,6 +66,12 @@ on:
       PAGES_TOKEN:
         required: false
         description: 'PAT with contents:write on xibo-players.github.io for central repo publishing'
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+      R2_ENDPOINT:
+        required: false
 
 jobs:
   build:
@@ -339,11 +337,11 @@ jobs:
           for rpm_file in rpms/*.rpm; do
             echo "Signing: $(basename $rpm_file)"
             if rpm --addsign "$rpm_file"; then
-              echo "  ✓ Signed successfully"
+              echo "  Signed successfully"
             elif [[ "$rpm_file" == *.src.rpm ]]; then
-              echo "  ⚠ WARNING: Failed to sign SRPM (corrupt payload checksum?), skipping"
+              echo "  WARNING: Failed to sign SRPM (corrupt payload checksum?), skipping"
             else
-              echo "  ✗ ERROR: Failed to sign binary RPM"
+              echo "  ERROR: Failed to sign binary RPM"
               sign_failed=1
             fi
           done
@@ -368,49 +366,49 @@ jobs:
           path: rpms/
           retention-days: 30
 
-  release:
-    name: Create GitHub Release
+  upload:
+    name: Upload to R2
     needs: sign
-    if: inputs.create-github-release && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    container:
+      image: fedora:43
 
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Install tools
+        run: dnf install -y awscli2
+
+      - name: Download signed RPMs
+        uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.package-name }}-rpm-signed
-          path: dist/
+          path: rpms/
 
-      - name: Generate release body
+      - name: Upload RPMs to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          PACKAGE: ${{ inputs.package-name }}
         run: |
-          if [ -n "${{ inputs.release-body }}" ]; then
-            echo "${{ inputs.release-body }}" > /tmp/release-body.md
-          else
-            cat > /tmp/release-body.md << EOF
-          ## ${{ inputs.package-name }}
+          BUCKET="s3://xiboplayer-images"
+          DEST="$BUCKET/packages/$PACKAGE/latest"
 
-          ### Installation
-          \`\`\`bash
-          sudo dnf install ./${{ inputs.package-name }}-*.rpm
-          \`\`\`
-          EOF
-          fi
+          # Clear previous version and upload current
+          aws s3 rm "$DEST/" --recursive --endpoint-url "$R2_ENDPOINT" 2>/dev/null || true
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          name: "${{ inputs.package-name }} ${{ github.ref_name }}"
-          body_path: /tmp/release-body.md
-          files: |
-            dist/*.rpm
-            dist/RPM-GPG-KEY-*
-          draft: false
-          prerelease: false
+          for file in rpms/*; do
+            NAME=$(basename "$file")
+            echo "Uploading $NAME"
+            aws s3 cp "$file" "$DEST/$NAME" --endpoint-url "$R2_ENDPOINT"
+          done
+
+          echo "Uploaded to: $DEST/"
+          aws s3 ls "$DEST/" --endpoint-url "$R2_ENDPOINT"
 
   notify:
     name: Trigger repository update
-    needs: release
-    if: inputs.publish-to-repo && needs.release.result == 'success'
+    needs: upload
+    if: inputs.publish-to-repo
     runs-on: ubuntu-latest
 
     steps:
@@ -422,5 +420,5 @@ jobs:
             -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/xibo-players/xibo-players.github.io/dispatches" \
-            -d '{"event_type": "update-repos", "client_payload": {"package": "${{ inputs.package-name }}", "repo": "${{ github.repository }}", "tag": "${{ github.ref_name }}"}}'
+            -d '{"event_type": "update-repos", "client_payload": {"package": "${{ inputs.package-name }}", "repo": "${{ github.repository }}"}}'
           echo "Triggered update-repos for ${{ inputs.package-name }}"
