@@ -394,7 +394,7 @@ jobs:
             --endpoint-url "$R2_ENDPOINT"
 
           echo "Upload complete. Files available at:"
-          echo "  https://images.xiboplayer.org/${PACKAGE}/${VERSION}/"
+          echo "  https://pub-c28f8a955b484eccb8b2280a81a71d47.r2.dev/${PACKAGE}/${VERSION}/"
 
       - name: Create GitHub Release (metadata + download links)
         env:
@@ -402,7 +402,7 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           PACKAGE: ${{ inputs.package-name }}
           VERSION: ${{ steps.version.outputs.version }}
-          DL: https://images.xiboplayer.org
+          DL: https://pub-c28f8a955b484eccb8b2280a81a71d47.r2.dev
         run: |
           NOTES=$(cat <<NOTES_EOF
           # ${PACKAGE} ${TAG}
