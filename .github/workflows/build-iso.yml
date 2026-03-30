@@ -325,13 +325,18 @@ jobs:
 
           ls -lah ${PACKAGE}-installer_${VERSION}_x86_64.iso
 
-      - name: List ISO
-        run: ls -lah *.iso
+      - name: Compress ISO (GitHub has 2GB asset limit)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          xz -T0 -6 ${PACKAGE}-installer_${VERSION}_x86_64.iso
+          ls -lah *.iso.xz
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.package-name }}-self-contained-iso
-          path: "*.iso"
+          path: "*.iso.xz"
           retention-days: 30
 
   release:
@@ -362,7 +367,7 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p release
-          find artifacts -type f \( -name "*.iso" -o -name "*.qcow2" -o -name "*.raw.xz" \) -exec mv {} release/ \;
+          find artifacts -type f \( -name "*.iso" -o -name "*.iso.xz" -o -name "*.qcow2" -o -name "*.raw.xz" \) -exec mv {} release/ \;
           ls -lah release/
 
       - name: Generate checksums
@@ -392,10 +397,10 @@ jobs:
           The easiest option for any Intel/AMD computer. Flash it to a USB stick, boot from it, and the installer does the rest — formats the disk, installs everything, and reboots into a ready-to-use kiosk.
 
           **Steps:**
-          1. Download \`${PACKAGE}-installer_${VERSION}_x86_64.iso\`
+          1. Download \`${PACKAGE}-installer_${VERSION}_x86_64.iso.xz\` and decompress: \`xz -d ${PACKAGE}-installer_${VERSION}_x86_64.iso.xz\`
           2. Flash it to a USB stick:
              \`\`\`
-             sudo dd if=${PACKAGE}-installer_${VERSION}_x86_64.iso of=/dev/sdX bs=8M status=progress
+             xz -dc ${PACKAGE}-installer_${VERSION}_x86_64.iso.xz | sudo dd of=/dev/sdX bs=8M status=progress
              \`\`\`
              Or use [Balena Etcher](https://etcher.balena.io/) (Windows/Mac/Linux — just click and flash)
           3. Boot from USB and wait — installation is fully automated
