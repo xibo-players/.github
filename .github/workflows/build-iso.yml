@@ -277,19 +277,11 @@ jobs:
       options: --privileged
 
     steps:
-      - name: Install osbuild-composer
+      - name: Install dependencies
         run: |
-          dnf install -y osbuild-composer composer-cli genisoimage xorriso
-          # Start osbuild-composer socket (systemd isn't running in container)
-          mkdir -p /run/weldr
-          /usr/libexec/osbuild-composer/osbuild-composer \
-            --weldr-api \
-            --socket /run/weldr/api.socket &
-          # Wait for socket
-          for i in $(seq 1 30); do
-            composer-cli status show 2>/dev/null && break
-            sleep 1
-          done
+          dnf install -y \
+            lorax pykickstart createrepo_c \
+            dnf-plugins-core curl xz
 
       - uses: actions/checkout@v4
 
@@ -305,65 +297,92 @@ jobs:
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Add custom repositories to osbuild-composer
+      - name: Add custom repositories
         run: |
-          # Add xiboplayer repo source
-          cat > /tmp/xiboplayer-repo.toml << 'REPO'
-          id = "xiboplayer"
-          name = "Xibo Players"
-          type = "yum-baseurl"
-          url = "https://dl.xiboplayer.org/rpm/fedora/43/x86_64/"
-          check_gpg = false
-          check_ssl = true
-          system = false
-          REPO
-          composer-cli sources add /tmp/xiboplayer-repo.toml
+          # Add xiboplayer repo
+          cat > /etc/yum.repos.d/xiboplayer.repo << 'EOF'
+          [xiboplayer]
+          name=Xibo Players
+          baseurl=https://dl.xiboplayer.org/rpm/fedora/$releasever/$basearch/
+          enabled=1
+          gpgcheck=0
+          EOF
 
-          # Add RPM Fusion free
-          cat > /tmp/rpmfusion-free.toml << 'REPO'
-          id = "rpmfusion-free"
-          name = "RPM Fusion Free"
-          type = "yum-baseurl"
-          url = "https://download1.rpmfusion.org/free/fedora/releases/43/Everything/x86_64/os/"
-          check_gpg = false
-          check_ssl = true
-          system = false
-          REPO
-          composer-cli sources add /tmp/rpmfusion-free.toml
+          # Add RPM Fusion
+          dnf install -y \
+            https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-43.noarch.rpm \
+            https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-43.noarch.rpm
 
-          composer-cli sources list
-
-      - name: Push blueprint
+      - name: Download all packages to local repo
         run: |
-          composer-cli blueprints push "${{ inputs.blueprint-file }}"
-          composer-cli blueprints show ${{ inputs.package-name }}
+          mkdir -p /tmp/local-repo
 
-      - name: Build image
+          # Parse packages from kickstart %packages section
+          KS_PACKAGES=$(sed -n '/%packages/,/%end/p' "${{ inputs.kickstart-file }}" | \
+            grep -v '^%\|^#\|^-\|^@' | tr -s '\n' ' ')
+
+          # Add post-install packages (from %post dnf install commands)
+          POST_PACKAGES=$(grep 'dnf install -y' "${{ inputs.kickstart-file }}" | \
+            grep -v 'rpmfusion\|release' | sed 's/.*dnf install -y //' | tr -s '\n' ' ')
+
+          # Add kickstart @groups as individual packages
+          KS_GROUPS=$(sed -n '/%packages/,/%end/p' "${{ inputs.kickstart-file }}" | \
+            grep '^@' | sed 's/^@//' | tr -s '\n' ' ')
+
+          ALL_PACKAGES="$KS_PACKAGES $POST_PACKAGES"
+          echo "Downloading packages: $ALL_PACKAGES"
+          echo "Groups: $KS_GROUPS"
+
+          # Download all packages with dependencies
+          dnf download --resolve --alldeps --destdir=/tmp/local-repo \
+            $ALL_PACKAGES || true
+
+          # Also download group packages
+          for group in $KS_GROUPS; do
+            dnf group info "$group" 2>/dev/null | \
+              grep -E '^\s+' | awk '{print $1}' | \
+              xargs -r dnf download --resolve --destdir=/tmp/local-repo 2>/dev/null || true
+          done
+
+          # Create repo metadata
+          createrepo_c /tmp/local-repo
+          echo "Local repo: $(ls /tmp/local-repo/*.rpm | wc -l) packages"
+
+      - name: Create self-contained kickstart
+        run: |
+          # Copy kickstart and modify for offline install
+          cp "${{ inputs.kickstart-file }}" /tmp/selfcontained.ks
+
+          # Remove any existing url/repo lines and add local repo
+          sed -i '/^url /d; /^repo /d' /tmp/selfcontained.ks
+
+          # Add harddrive install source (packages on the ISO itself)
+          sed -i '/^skipx/a harddrive --partition=LABEL=OEMDRV --dir=/' /tmp/selfcontained.ks
+
+          cat /tmp/selfcontained.ks
+
+      - name: Download Fedora netinstall ISO
+        run: |
+          curl -L -o /tmp/fedora-netinst.iso \
+            "https://ftp.plusline.net/fedora/linux/releases/43/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-43-1.6.iso"
+
+      - name: Build self-contained ISO
         env:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
-          # Start a compose for image-installer type (creates bootable ISO)
-          BUILD_ID=$(composer-cli compose start $PACKAGE image-installer | awk '{print $2}')
-          echo "Build ID: $BUILD_ID"
-
-          # Wait for build to complete (timeout 30 minutes)
-          for i in $(seq 1 180); do
-            STATUS=$(composer-cli compose status | grep "$BUILD_ID" | awk '{print $2}')
-            echo "[$i/180] Status: $STATUS"
-            if [ "$STATUS" = "FINISHED" ]; then
-              break
-            elif [ "$STATUS" = "FAILED" ]; then
-              echo "Build failed!"
-              composer-cli compose log "$BUILD_ID"
-              exit 1
-            fi
-            sleep 10
-          done
-
-          # Download the ISO
-          composer-cli compose image "$BUILD_ID"
-          mv *.iso ${PACKAGE}-selfcontained_${VERSION}_x86_64.iso
+          # Embed kickstart + local repo into the ISO
+          mkksiso \
+            --ks /tmp/selfcontained.ks \
+            --add /tmp/local-repo \
+            /tmp/fedora-netinst.iso \
+            ${PACKAGE}-selfcontained_${VERSION}_x86_64.iso || \
+          (echo "Retrying..." && sleep 10 && \
+           mkksiso \
+            --ks /tmp/selfcontained.ks \
+            --add /tmp/local-repo \
+            /tmp/fedora-netinst.iso \
+            ${PACKAGE}-selfcontained_${VERSION}_x86_64.iso)
 
       - name: List ISO
         run: ls -lah *.iso
