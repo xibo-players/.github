@@ -36,7 +36,7 @@ Default login: `xibo` / `xibo` — change your password, then connect to your CM
 **Fedora 43+**
 ```bash
 sudo dnf install \
-  https://github.com/xibo-players/xibo-players.github.io/releases/download/v43-5/xiboplayer-release-43-5.noarch.rpm
+  https://dl.xiboplayer.org/rpm/fedora/43/noarch/xiboplayer-release-43-7.fc43.noarch.rpm
 
 sudo dnf install xiboplayer-kiosk        # Full kiosk environment
 sudo dnf install xiboplayer-electron     # Electron player
