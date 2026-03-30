@@ -61,7 +61,8 @@ jobs:
             systemd-container \
             qemu-img \
             mtools \
-            xz
+            xz \
+            awscli2
 
       - uses: actions/checkout@v4
 
@@ -87,13 +88,11 @@ jobs:
           else
             echo "Using template mkosi configuration"
             cp scripts/mkosi/mkosi.conf.template mkosi.conf
-            # Customize ImageId
             sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}/" mkosi.conf
           fi
 
       - name: Set file permissions
         run: |
-          # Set permissions for any scripts in mkosi-extra
           find mkosi-extra -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
           find mkosi-extra -type f -name "doas.conf" -exec chmod 600 {} \; 2>/dev/null || true
 
@@ -125,13 +124,21 @@ jobs:
       - name: List output
         run: ls -lah output/
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ inputs.package-name }}-images-x86_64
-          path: |
-            output/*.qcow2
-            output/*.raw.xz
-          retention-days: 30
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          for file in output/*.qcow2 output/*.raw.xz; do
+            [ -f "$file" ] || continue
+            NAME=$(basename "$file")
+            echo "Uploading $NAME"
+            aws s3 cp "$file" "s3://xiboplayer-images/${PACKAGE}/${VERSION}/${NAME}" \
+              --endpoint-url "$R2_ENDPOINT"
+          done
 
   build-disk-images-aarch64:
     if: inputs.build-disk-images == true && contains(inputs.architectures, 'aarch64')
@@ -149,7 +156,8 @@ jobs:
             mkosi \
             systemd-container \
             mtools \
-            xz
+            xz \
+            awscli2
 
       - uses: actions/checkout@v4
 
@@ -203,12 +211,21 @@ jobs:
       - name: List output
         run: ls -lah output/
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ inputs.package-name }}-images-aarch64
-          path: output/*.raw.xz
-          retention-days: 30
-
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          for file in output/*.raw.xz; do
+            [ -f "$file" ] || continue
+            NAME=$(basename "$file")
+            echo "Uploading $NAME"
+            aws s3 cp "$file" "s3://xiboplayer-images/${PACKAGE}/${VERSION}/${NAME}" \
+              --endpoint-url "$R2_ENDPOINT"
+          done
 
   build-self-contained-iso:
     if: inputs.build-self-contained-iso == true
@@ -223,7 +240,8 @@ jobs:
         run: |
           dnf install -y \
             lorax pykickstart createrepo_c \
-            dnf-plugins-core curl xz
+            dnf-plugins-core curl xz \
+            awscli2
 
       - uses: actions/checkout@v4
 
@@ -325,14 +343,24 @@ jobs:
 
           ls -lah ${PACKAGE}-installer_${VERSION}_x86_64.iso
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ inputs.package-name }}-self-contained-iso
-          path: "*.iso"
-          retention-days: 30
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          for file in *.iso; do
+            [ -f "$file" ] || continue
+            NAME=$(basename "$file")
+            echo "Uploading $NAME"
+            aws s3 cp "$file" "s3://xiboplayer-images/${PACKAGE}/${VERSION}/${NAME}" \
+              --endpoint-url "$R2_ENDPOINT"
+          done
 
-  publish:
-    name: Upload to Cloudflare R2
+  release:
+    name: Create GitHub Release
     needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-self-contained-iso]
     if: always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-self-contained-iso.result == 'success')
     runs-on: ubuntu-latest
@@ -352,48 +380,6 @@ jobs:
             echo "tag=v${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts/
-
-      - name: Flatten artifacts
-        run: |
-          mkdir -p release
-          find artifacts -type f \( -name "*.iso" -o -name "*.qcow2" -o -name "*.raw.xz" \) -exec mv {} release/ \;
-          ls -lah release/
-
-      - name: Generate checksums
-        run: |
-          cd release
-          sha256sum * > SHA256SUMS
-          cat SHA256SUMS
-
-      - name: Upload to Cloudflare R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE: ${{ inputs.package-name }}
-        run: |
-          # Upload each file to R2 under package/version/ prefix
-          for file in release/*; do
-            FILENAME=$(basename "$file")
-            KEY="${PACKAGE}/${VERSION}/${FILENAME}"
-            echo "Uploading $FILENAME → s3://xiboplayer-images/${KEY}"
-            aws s3 cp "$file" "s3://xiboplayer-images/${KEY}" \
-              --endpoint-url "$R2_ENDPOINT"
-          done
-
-          # Also copy latest version marker
-          echo "$VERSION" > /tmp/LATEST
-          aws s3 cp /tmp/LATEST "s3://xiboplayer-images/${PACKAGE}/LATEST" \
-            --endpoint-url "$R2_ENDPOINT"
-
-          echo "Upload complete. Files available at:"
-          echo "  https://images.xiboplayer.org/${PACKAGE}/${VERSION}/"
 
       - name: Create GitHub Release (metadata + download links)
         env:
