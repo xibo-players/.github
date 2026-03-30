@@ -558,6 +558,3 @@ jobs:
           gh release view "$TAG" --json tagName >/dev/null 2>&1 || \
             gh release create "$TAG" --title "${PACKAGE} ${TAG}" --notes ""
           gh release edit "$TAG" --notes "$NOTES"
-
-          # Upload checksums to GitHub Release too
-          gh release upload "$TAG" release/SHA256SUMS --clobber
