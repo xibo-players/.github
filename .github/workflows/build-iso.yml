@@ -332,24 +332,15 @@ jobs:
           retention-days: 30
 
   publish:
-    name: Publish to GHCR
+    name: Upload to Cloudflare R2
     needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-self-contained-iso]
     if: always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-self-contained-iso.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: write
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install ORAS
-        run: |
-          curl -LO https://github.com/oras-project/oras/releases/download/v1.2.2/oras_1.2.2_linux_amd64.tar.gz
-          tar xzf oras_1.2.2_linux_amd64.tar.gz -C /usr/local/bin oras
-
-      - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Determine version
         id: version
@@ -379,44 +370,39 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
 
-      - name: Push images to GHCR
+      - name: Upload to Cloudflare R2
         env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
-          REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: |
-          cd release
-          for file in *.iso *.qcow2 *.raw.xz; do
-            [ -f "$file" ] || continue
-            # Derive image type from filename (iso, qcow2, raw-x86_64, raw-aarch64)
-            case "$file" in
-              *installer*.iso)   TYPE="iso" ;;
-              *.qcow2)           TYPE="qcow2" ;;
-              *aarch64.raw.xz)   TYPE="raw-aarch64" ;;
-              *x86_64.raw.xz)    TYPE="raw-x86_64" ;;
-              *)                 TYPE="image" ;;
-            esac
-            REPO="${REGISTRY}/${PACKAGE}/${TYPE}"
-            echo "Pushing $file → ${REPO}:${VERSION}"
-            oras push "${REPO}:${VERSION}" \
-              --annotation "org.opencontainers.image.title=${file}" \
-              --annotation "org.opencontainers.image.version=${VERSION}" \
-              "$file"
-            # Also tag as latest
-            oras tag "${REPO}:${VERSION}" latest
+          # Upload each file to R2 under package/version/ prefix
+          for file in release/*; do
+            FILENAME=$(basename "$file")
+            KEY="${PACKAGE}/${VERSION}/${FILENAME}"
+            echo "Uploading $FILENAME → s3://xiboplayer-images/${KEY}"
+            aws s3 cp "$file" "s3://xiboplayer-images/${KEY}" \
+              --endpoint-url "$R2_ENDPOINT" \
+              --no-sign-request=false
           done
 
-          # Push checksums
-          oras push "${REGISTRY}/${PACKAGE}/checksums:${VERSION}" SHA256SUMS
-          oras tag "${REGISTRY}/${PACKAGE}/checksums:${VERSION}" latest
+          # Also copy latest version marker
+          echo "$VERSION" > /tmp/LATEST
+          aws s3 cp /tmp/LATEST "s3://xiboplayer-images/${PACKAGE}/LATEST" \
+            --endpoint-url "$R2_ENDPOINT"
 
-      - name: Create GitHub Release (metadata only, images on GHCR)
+          echo "Upload complete. Files available at:"
+          echo "  https://images.xiboplayer.org/${PACKAGE}/${VERSION}/"
+
+      - name: Create GitHub Release (metadata + download links)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
           PACKAGE: ${{ inputs.package-name }}
           VERSION: ${{ steps.version.outputs.version }}
-          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          DL: https://images.xiboplayer.org
         run: |
           NOTES=$(cat <<NOTES_EOF
           # ${PACKAGE} ${TAG}
@@ -425,41 +411,27 @@ jobs:
 
           ## Download images
 
-          All images are hosted on GHCR. Install [ORAS](https://oras.land) to download:
-
-          \`\`\`bash
-          # Installer ISO (PC/laptop — fully offline, includes all packages)
-          oras pull ${REGISTRY}/${PACKAGE}/iso:${VERSION}
-
-          # Raspberry Pi raw image
-          oras pull ${REGISTRY}/${PACKAGE}/raw-aarch64:${VERSION}
-
-          # Intel NUC / embedded raw image
-          oras pull ${REGISTRY}/${PACKAGE}/raw-x86_64:${VERSION}
-
-          # Virtual machine (QCOW2)
-          oras pull ${REGISTRY}/${PACKAGE}/qcow2:${VERSION}
-
-          # Checksums
-          oras pull ${REGISTRY}/${PACKAGE}/checksums:${VERSION}
-          \`\`\`
+          | Image | Hardware | Download |
+          |-------|----------|----------|
+          | **Installer ISO** | Any PC or laptop | [${PACKAGE}-installer_${VERSION}_x86_64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-installer_${VERSION}_x86_64.iso) |
+          | **Raw disk (aarch64)** | Raspberry Pi 4/5 | [${PACKAGE}_${VERSION}_aarch64.raw.xz](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_aarch64.raw.xz) |
+          | **Raw disk (x86_64)** | Intel NUC, embedded | [${PACKAGE}_${VERSION}_x86_64.raw.xz](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_x86_64.raw.xz) |
+          | **QCOW2** | Virtual machines | [${PACKAGE}_${VERSION}_x86_64.qcow2](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_x86_64.qcow2) |
+          | **Checksums** | Verify downloads | [SHA256SUMS](${DL}/${PACKAGE}/${VERSION}/SHA256SUMS) |
 
           ## Quick start
 
           ### 🖥️ PC or laptop — Installer ISO
-          1. \`oras pull ${REGISTRY}/${PACKAGE}/iso:${VERSION}\`
-          2. Flash to USB: \`sudo dd if=*.iso of=/dev/sdX bs=8M status=progress\` or use [Balena Etcher](https://etcher.balena.io/)
-          3. Boot from USB — fully automated install, no network needed
-          4. Remove USB, reboot
+          1. Download the ISO and flash to USB with [Balena Etcher](https://etcher.balena.io/) or \`dd\`
+          2. Boot from USB — fully automated install, no network needed
+          3. Remove USB, reboot
 
           ### 🍓 Raspberry Pi 4/5 — Raw image
-          1. \`oras pull ${REGISTRY}/${PACKAGE}/raw-aarch64:${VERSION}\`
-          2. \`xz -dc *.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress\` or use Balena Etcher
-          3. Insert SD card, power on
+          1. Download and flash to SD card with [Balena Etcher](https://etcher.balena.io/)
+          2. Insert SD card, power on — boots ready to use
 
           ### 💻 Virtual machine — QCOW2
-          1. \`oras pull ${REGISTRY}/${PACKAGE}/qcow2:${VERSION}\`
-          2. Open with GNOME Boxes, virt-manager, Proxmox or QEMU
+          1. Download and open with GNOME Boxes, virt-manager, Proxmox or QEMU
 
           ## After booting
 
@@ -467,10 +439,6 @@ jobs:
           2. Change password: \`passwd\`
           3. Connect to your Xibo CMS from the setup screen
           4. Content plays automatically
-
-          ## Container registry
-
-          Images: \`${REGISTRY}/${PACKAGE}/\`
           NOTES_EOF
           )
 
@@ -478,5 +446,5 @@ jobs:
             gh release create "$TAG" --title "${PACKAGE} ${TAG}" --notes ""
           gh release edit "$TAG" --notes "$NOTES"
 
-          # Upload only checksums to GitHub Release (small file)
+          # Upload checksums to GitHub Release too
           gh release upload "$TAG" release/SHA256SUMS --clobber
