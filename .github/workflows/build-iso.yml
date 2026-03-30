@@ -209,64 +209,6 @@ jobs:
           path: output/*.raw.xz
           retention-days: 30
 
-  build-installer-iso:
-    if: inputs.build-installer == true
-    name: Build Installer ISO
-    runs-on: ubuntu-latest
-    container:
-      image: fedora:43
-      options: --privileged
-
-    steps:
-      - name: Install dependencies
-        run: dnf install -y lorax pykickstart curl
-
-      - uses: actions/checkout@v4
-
-      - name: Determine version
-        id: version
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            TAG="${{ github.ref_name }}"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Download Fedora Workstation Live ISO
-        run: |
-          curl -L -o /tmp/fedora-workstation.iso \
-            "https://ftp.plusline.net/fedora/linux/releases/43/Workstation/x86_64/iso/Fedora-Workstation-Live-43-1.6.x86_64.iso"
-
-      - name: Validate Kickstart file
-        run: |
-          if [ -f "${{ inputs.kickstart-file }}" ]; then
-            echo "Using provided kickstart file: ${{ inputs.kickstart-file }}"
-            ksvalidator "${{ inputs.kickstart-file }}" || echo "Warning: Kickstart validation failed"
-          else
-            echo "Error: Kickstart file not found: ${{ inputs.kickstart-file }}"
-            exit 1
-          fi
-
-      - name: Build installer ISO
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE: ${{ inputs.package-name }}
-        run: |
-          mkksiso --ks "${{ inputs.kickstart-file }}" \
-            /tmp/fedora-workstation.iso \
-            ${PACKAGE}-installer_${VERSION}_x86_64.iso
-
-      - name: List ISO
-        run: ls -lah *.iso
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ inputs.package-name }}-installer-iso
-          path: "*.iso"
-          retention-days: 30
 
   build-self-contained-iso:
     if: inputs.build-self-contained-iso == true
@@ -373,15 +315,15 @@ jobs:
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-workstation.iso \
-            ${PACKAGE}-selfcontained_${VERSION}_x86_64.iso || \
+            ${PACKAGE}-installer_${VERSION}_x86_64.iso || \
           (echo "Retrying..." && sleep 10 && \
            mkksiso \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-workstation.iso \
-            ${PACKAGE}-selfcontained_${VERSION}_x86_64.iso)
+            ${PACKAGE}-installer_${VERSION}_x86_64.iso)
 
-          ls -lah ${PACKAGE}-selfcontained_${VERSION}_x86_64.iso
+          ls -lah ${PACKAGE}-installer_${VERSION}_x86_64.iso
 
       - name: List ISO
         run: ls -lah *.iso
@@ -394,8 +336,8 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-installer-iso, build-self-contained-iso]
-    if: always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-installer-iso.result == 'success' || needs.build-self-contained-iso.result == 'success')
+    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-self-contained-iso]
+    if: always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-self-contained-iso.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
