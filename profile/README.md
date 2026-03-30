@@ -1,8 +1,8 @@
-<img alt="XiboPlayer" src="https://dl.xiboplayer.org/logo-192.png" width="64">
+<img alt="XiboPlayer" src="https://www.xiboplayer.org/logo-192.png" width="64">
 
-### Open-source digital signage players for [Xibo CMS](https://xibosignage.com)
+### Free open-source signage players for [Xibo CMS](https://xibosignage.com)
 
-Turn any Linux PC, Raspberry Pi, or web browser into a digital signage display. Cross-platform, offline-first, cross-device video walls, and built on a modular TypeScript SDK with 1629 tests.
+Turn any Linux PC, Raspberry Pi, Android device or web browser into a digital signage display. Cross-platform, offline-first, cross-device video walls, GPU-accelerated and built on a modular TypeScript SDK with 1629 tests.
 
 > **Community project** — not affiliated with Xibo Signage Ltd. [Xibo](https://xibosignage.com) is a trademark of Xibo Ltd.
 
@@ -44,15 +44,14 @@ sudo dnf install xiboplayer-chromium     # Chromium kiosk
 sudo dnf install arexibo                 # Native Rust player
 ```
 
-**Ubuntu 24.04 / Debian Trixie**
+**Debian Trixie / Ubuntu 24.04 / Raspberry Pi OS**
 ```bash
-curl -fsSL https://dl.xiboplayer.org/deb/GPG-KEY.asc \
-  | sudo gpg --dearmor -o /usr/share/keyrings/xibo-players.gpg
+curl -fsSL https://dl.xiboplayer.org/deb/DEB-GPG-KEY-xiboplayer | \
+  sudo tee /etc/apt/keyrings/xiboplayer.asc > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/xiboplayer.asc] https://dl.xiboplayer.org/deb/debian/trixie ./" | \
+  sudo tee /etc/apt/sources.list.d/xiboplayer.list
 
-sudo curl -fsSL https://dl.xiboplayer.org/deb/xibo-players.sources \
-  -o /etc/apt/sources.list.d/xibo-players.sources
-
-sudo apt update && sudo apt install xiboplayer-kiosk
+sudo apt update && sudo apt install xiboplayer-chromium
 ```
 
 ## SDK
@@ -67,7 +66,8 @@ npm install @xiboplayer/core @xiboplayer/renderer @xiboplayer/cache @xiboplayer/
 
 | | |
 |---|---|
-| **[www.xiboplayer.org](https://www.xiboplayer.org)** | Documentation, features, and guides |
-| **[dl.xiboplayer.org](https://dl.xiboplayer.org)** | Browse packages, images, and setup instructions |
-| **[Feature comparison](https://dl.xiboplayer.org/docs/FEATURE_COMPARISON)** | 100% parity with unique capabilities vs upstream players |
+| **[xiboplayer.org](https://www.xiboplayer.org)** | Players, guides, downloads and documentation |
+| **[Feature comparison](https://www.xiboplayer.org/features/comparison)** | 53 features, 5% CPU, zero memory leaks — vs upstream players |
+| **[Blog](https://www.xiboplayer.org/blog)** | Guides and tutorials about digital signage |
+| **[Downloads](https://www.xiboplayer.org/downloads)** | Bootable images, RPM and DEB packages |
 | **[npm packages](https://www.npmjs.com/org/xiboplayer)** | 14 SDK packages on npm |
