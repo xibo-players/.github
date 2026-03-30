@@ -359,10 +359,137 @@ jobs:
               --endpoint-url "$R2_ENDPOINT"
           done
 
+  build-self-contained-iso-aarch64:
+    if: inputs.build-self-contained-iso == true && contains(inputs.architectures, 'aarch64')
+    name: Build Self-Contained ISO (aarch64)
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: fedora:43
+      options: --privileged
+
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y \
+            lorax pykickstart createrepo_c \
+            dnf-plugins-core curl xz \
+            awscli2
+
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Add custom repositories
+        run: |
+          # Add xiboplayer repo
+          cat > /etc/yum.repos.d/xiboplayer.repo << 'EOF'
+          [xiboplayer]
+          name=Xibo Players
+          baseurl=https://dl.xiboplayer.org/rpm/fedora/$releasever/$basearch/
+          enabled=1
+          gpgcheck=0
+          EOF
+
+          # Add RPM Fusion
+          dnf install -y \
+            https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-43.noarch.rpm \
+            https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-43.noarch.rpm
+
+      - name: Download extra packages not on Workstation ISO
+        run: |
+          mkdir -p /tmp/local-repo
+
+          # Parse packages from kickstart %packages section
+          KS_PACKAGES=$(sed -n '/%packages/,/%end/p' "${{ inputs.kickstart-file }}" | \
+            grep -v '^%\|^#\|^-\|^@' | tr -s '\n' ' ')
+
+          # Post-install packages (from %post dnf install commands)
+          POST_PACKAGES=$(grep 'dnf install -y' "${{ inputs.kickstart-file }}" | \
+            grep -v 'rpmfusion\|release' | sed 's/.*dnf install -y //' | tr -s '\n' ' ')
+
+          ALL_PACKAGES="$KS_PACKAGES $POST_PACKAGES"
+          echo "Downloading extra packages: $ALL_PACKAGES"
+
+          # Download with all dependencies
+          dnf download --resolve --alldeps --destdir=/tmp/local-repo \
+            $ALL_PACKAGES || true
+
+          # Create repo metadata
+          createrepo_c /tmp/local-repo
+          PKG_COUNT=$(ls /tmp/local-repo/*.rpm 2>/dev/null | wc -l)
+          REPO_SIZE=$(du -sh /tmp/local-repo | cut -f1)
+          echo "Local repo: $PKG_COUNT packages, $REPO_SIZE"
+
+      - name: Create offline kickstart
+        run: |
+          cp "${{ inputs.kickstart-file }}" /tmp/selfcontained.ks
+
+          # Remove network install source
+          sed -i '/^url /d; /^repo /d' /tmp/selfcontained.ks
+
+          # Add local repo for extra packages embedded on the ISO
+          sed -i '/^skipx/a repo --name=local-extras --baseurl=file:///run/install/repo/local-repo/' /tmp/selfcontained.ks
+
+          echo "=== Offline kickstart ==="
+          head -30 /tmp/selfcontained.ks
+
+      - name: Download Fedora Workstation Live ISO (aarch64)
+        run: |
+          curl -L -o /tmp/fedora-workstation.iso \
+            "https://ftp.plusline.net/fedora/linux/releases/43/Workstation/aarch64/iso/Fedora-Workstation-Live-aarch64-43-1.6.iso"
+
+      - name: Build self-contained ISO
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          mkdir -p /tmp/iso-extra/local-repo
+          cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
+
+          mkksiso --skip-mkefiboot \
+            --ks /tmp/selfcontained.ks \
+            --add /tmp/iso-extra \
+            /tmp/fedora-workstation.iso \
+            ${PACKAGE}-installer_${VERSION}_aarch64.iso || \
+          (echo "Retrying..." && sleep 10 && \
+           mkksiso --skip-mkefiboot \
+            --ks /tmp/selfcontained.ks \
+            --add /tmp/iso-extra \
+            /tmp/fedora-workstation.iso \
+            ${PACKAGE}-installer_${VERSION}_aarch64.iso)
+
+          ls -lah ${PACKAGE}-installer_${VERSION}_aarch64.iso
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          for file in *.iso; do
+            [ -f "$file" ] || continue
+            NAME=$(basename "$file")
+            echo "Uploading $NAME"
+            aws s3 cp "$file" "s3://xiboplayer-images/${PACKAGE}/${VERSION}/${NAME}" \
+              --endpoint-url "$R2_ENDPOINT"
+          done
+
   release:
     name: Create GitHub Release
-    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-self-contained-iso]
-    if: always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-self-contained-iso.result == 'success')
+    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-self-contained-iso, build-self-contained-iso-aarch64]
+    if: always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-self-contained-iso.result == 'success' || needs.build-self-contained-iso-aarch64.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -398,7 +525,8 @@ jobs:
 
           | Image | Hardware | Download |
           |-------|----------|----------|
-          | **Installer ISO** | Any PC or laptop | [${PACKAGE}-installer_${VERSION}_x86_64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-installer_${VERSION}_x86_64.iso) |
+          | **Installer ISO (x86_64)** | Any PC or laptop | [${PACKAGE}-installer_${VERSION}_x86_64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-installer_${VERSION}_x86_64.iso) |
+          | **Installer ISO (aarch64)** | ARM mini PCs | [${PACKAGE}-installer_${VERSION}_aarch64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-installer_${VERSION}_aarch64.iso) |
           | **Raw disk (aarch64)** | Raspberry Pi 4/5 | [${PACKAGE}_${VERSION}_aarch64.raw.xz](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_aarch64.raw.xz) |
           | **Raw disk (x86_64)** | Intel NUC, embedded | [${PACKAGE}_${VERSION}_x86_64.raw.xz](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_x86_64.raw.xz) |
           | **QCOW2** | Virtual machines | [${PACKAGE}_${VERSION}_x86_64.qcow2](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_x86_64.qcow2) |
