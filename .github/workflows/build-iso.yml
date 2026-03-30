@@ -311,13 +311,13 @@ jobs:
           mkdir -p /tmp/iso-extra/local-repo
           cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
 
-          mkksiso \
+          mkksiso --skip-mkefiboot \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-workstation.iso \
             ${PACKAGE}-installer_${VERSION}_x86_64.iso || \
           (echo "Retrying..." && sleep 10 && \
-           mkksiso \
+           mkksiso --skip-mkefiboot \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-workstation.iso \
