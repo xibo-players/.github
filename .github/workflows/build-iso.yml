@@ -325,38 +325,41 @@ jobs:
 
           ls -lah ${PACKAGE}-installer_${VERSION}_x86_64.iso
 
-      - name: Compress ISO (GitHub has 2GB asset limit)
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE: ${{ inputs.package-name }}
-        run: |
-          xz -T0 -6 ${PACKAGE}-installer_${VERSION}_x86_64.iso
-          ls -lah *.iso.xz
-
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.package-name }}-self-contained-iso
-          path: "*.iso.xz"
+          path: "*.iso"
           retention-days: 30
 
-  release:
-    name: Create GitHub Release
+  publish:
+    name: Publish to GHCR
     needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-self-contained-iso]
     if: always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-self-contained-iso.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install ORAS
+        run: |
+          curl -LO https://github.com/oras-project/oras/releases/download/v1.2.2/oras_1.2.2_linux_amd64.tar.gz
+          tar xzf oras_1.2.2_linux_amd64.tar.gz -C /usr/local/bin oras
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | oras login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Determine version
         id: version
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
             echo "tag=v${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download all artifacts
@@ -367,7 +370,7 @@ jobs:
       - name: Flatten artifacts
         run: |
           mkdir -p release
-          find artifacts -type f \( -name "*.iso" -o -name "*.iso.xz" -o -name "*.qcow2" -o -name "*.raw.xz" \) -exec mv {} release/ \;
+          find artifacts -type f \( -name "*.iso" -o -name "*.qcow2" -o -name "*.raw.xz" \) -exec mv {} release/ \;
           ls -lah release/
 
       - name: Generate checksums
@@ -376,127 +379,104 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
 
-      - name: Create or update GitHub Release
+      - name: Push images to GHCR
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          cd release
+          for file in *.iso *.qcow2 *.raw.xz; do
+            [ -f "$file" ] || continue
+            # Derive image type from filename (iso, qcow2, raw-x86_64, raw-aarch64)
+            case "$file" in
+              *installer*.iso)   TYPE="iso" ;;
+              *.qcow2)           TYPE="qcow2" ;;
+              *aarch64.raw.xz)   TYPE="raw-aarch64" ;;
+              *x86_64.raw.xz)    TYPE="raw-x86_64" ;;
+              *)                 TYPE="image" ;;
+            esac
+            REPO="${REGISTRY}/${PACKAGE}/${TYPE}"
+            echo "Pushing $file → ${REPO}:${VERSION}"
+            oras push "${REPO}:${VERSION}" \
+              --annotation "org.opencontainers.image.title=${file}" \
+              --annotation "org.opencontainers.image.version=${VERSION}" \
+              "$file"
+            # Also tag as latest
+            oras tag "${REPO}:${VERSION}" latest
+          done
+
+          # Push checksums
+          oras push "${REGISTRY}/${PACKAGE}/checksums:${VERSION}" SHA256SUMS
+          oras tag "${REGISTRY}/${PACKAGE}/checksums:${VERSION}" latest
+
+      - name: Create GitHub Release (metadata only, images on GHCR)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
           PACKAGE: ${{ inputs.package-name }}
-          VERSION: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: |
-          VERSION="${TAG#v}"
-
           NOTES=$(cat <<NOTES_EOF
           # ${PACKAGE} ${TAG}
 
           Turn any PC or Raspberry Pi into a digital signage kiosk — just flash, boot, and connect to your Xibo CMS.
 
-          ## Which image do I need?
+          ## Download images
 
-          ### 🖥️ PC or laptop — **Installer ISO** (recommended)
+          All images are hosted on GHCR. Install [ORAS](https://oras.land) to download:
 
-          The easiest option for any Intel/AMD computer. Flash it to a USB stick, boot from it, and the installer does the rest — formats the disk, installs everything, and reboots into a ready-to-use kiosk.
+          \`\`\`bash
+          # Installer ISO (PC/laptop — fully offline, includes all packages)
+          oras pull ${REGISTRY}/${PACKAGE}/iso:${VERSION}
 
-          **Steps:**
-          1. Download \`${PACKAGE}-installer_${VERSION}_x86_64.iso.xz\` and decompress: \`xz -d ${PACKAGE}-installer_${VERSION}_x86_64.iso.xz\`
-          2. Flash it to a USB stick:
-             \`\`\`
-             xz -dc ${PACKAGE}-installer_${VERSION}_x86_64.iso.xz | sudo dd of=/dev/sdX bs=8M status=progress
-             \`\`\`
-             Or use [Balena Etcher](https://etcher.balena.io/) (Windows/Mac/Linux — just click and flash)
-          3. Boot from USB and wait — installation is fully automated
-          4. Remove USB, the kiosk boots and shows the setup screen
+          # Raspberry Pi raw image
+          oras pull ${REGISTRY}/${PACKAGE}/raw-aarch64:${VERSION}
 
-          ---
+          # Intel NUC / embedded raw image
+          oras pull ${REGISTRY}/${PACKAGE}/raw-x86_64:${VERSION}
 
-          ### 🍓 Raspberry Pi 4/5 — **Raw image (aarch64)**
+          # Virtual machine (QCOW2)
+          oras pull ${REGISTRY}/${PACKAGE}/qcow2:${VERSION}
 
-          Write directly to an SD card (or eMMC). No installer needed — just flash and boot.
+          # Checksums
+          oras pull ${REGISTRY}/${PACKAGE}/checksums:${VERSION}
+          \`\`\`
 
-          **Steps:**
-          1. Download \`${PACKAGE}_${VERSION}_aarch64.raw.xz\`
-          2. Flash it to your SD card:
-             \`\`\`
-             xz -dc ${PACKAGE}_${VERSION}_aarch64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
-             \`\`\`
-             Or use [Balena Etcher](https://etcher.balena.io/) (handles .xz automatically)
-          3. Insert SD card into your Pi and power on
+          ## Quick start
 
-          ---
+          ### 🖥️ PC or laptop — Installer ISO
+          1. \`oras pull ${REGISTRY}/${PACKAGE}/iso:${VERSION}\`
+          2. Flash to USB: \`sudo dd if=*.iso of=/dev/sdX bs=8M status=progress\` or use [Balena Etcher](https://etcher.balena.io/)
+          3. Boot from USB — fully automated install, no network needed
+          4. Remove USB, reboot
 
-          ### 💻 Virtual machine (QEMU, Proxmox, GNOME Boxes) — **QCOW2**
+          ### 🍓 Raspberry Pi 4/5 — Raw image
+          1. \`oras pull ${REGISTRY}/${PACKAGE}/raw-aarch64:${VERSION}\`
+          2. \`xz -dc *.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress\` or use Balena Etcher
+          3. Insert SD card, power on
 
-          Ready-to-boot VM image. No installation, no USB stick — just open and run.
-
-          **Steps:**
-          1. Download \`${PACKAGE}_${VERSION}_x86_64.qcow2\`
-          2. Run it:
-             - **GNOME Boxes**: File → Import → select the .qcow2 file
-             - **virt-manager**: Create VM → Import existing disk → select .qcow2
-             - **Proxmox**: Upload to storage, create VM with existing disk
-             - **QEMU command line**:
-               \`\`\`
-               qemu-system-x86_64 -enable-kvm -m 2G -drive file=${PACKAGE}_${VERSION}_x86_64.qcow2
-               \`\`\`
-
-          ---
-
-          ### 🔧 Intel NUC / embedded PC — **Raw image (x86_64)**
-
-          Write directly to the internal SSD or an SD card. Same as the Raspberry Pi image but for Intel/AMD hardware.
-
-          **Steps:**
-          1. Download \`${PACKAGE}_${VERSION}_x86_64.raw.xz\`
-          2. Flash to disk:
-             \`\`\`
-             xz -dc ${PACKAGE}_${VERSION}_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M status=progress
-             \`\`\`
-             Or use [Balena Etcher](https://etcher.balena.io/)
-
-          ---
+          ### 💻 Virtual machine — QCOW2
+          1. \`oras pull ${REGISTRY}/${PACKAGE}/qcow2:${VERSION}\`
+          2. Open with GNOME Boxes, virt-manager, Proxmox or QEMU
 
           ## After booting
 
-          1. Log in with user \`xibo\` / password \`xibo\`
-          2. **Change your password** — \`passwd\`
-          3. Connect to your Xibo CMS from the kiosk setup screen
-          4. The display registers automatically and starts playing your scheduled content
+          1. Log in: \`xibo\` / \`xibo\`
+          2. Change password: \`passwd\`
+          3. Connect to your Xibo CMS from the setup screen
+          4. Content plays automatically
 
-          ## RPM package (for existing Fedora systems)
+          ## Container registry
 
-          If you already have Fedora installed and just want the kiosk player software:
-          \`\`\`bash
-          sudo dnf install xibo-kiosk
-          \`\`\`
-
-          ## Verify downloads
-
-          \`\`\`bash
-          sha256sum -c SHA256SUMS
-          \`\`\`
+          Images: \`${REGISTRY}/${PACKAGE}/\`
           NOTES_EOF
           )
 
-          # Create release if it doesn't exist, then always update notes
           gh release view "$TAG" --json tagName >/dev/null 2>&1 || \
             gh release create "$TAG" --title "${PACKAGE} ${TAG}" --notes ""
           gh release edit "$TAG" --notes "$NOTES"
 
-          # Upload all artifacts (--clobber overwrites existing)
-          gh release upload "$TAG" release/* --clobber
-
-  publish-iso:
-    name: Trigger repository update
-    needs: [release]
-    if: needs.release.result == 'success'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Trigger ghpages repo update
-        env:
-          GH_TOKEN: ${{ secrets.GHPAGES_TOKEN }}
-        run: |
-          if [ -n "$GH_TOKEN" ]; then
-            gh api repos/xibo-players/xibo-players.github.io/dispatches \
-              -f event_type=update-repos \
-              -f "client_payload[source]=${{ inputs.package-name }}" || true
-          fi
+          # Upload only checksums to GitHub Release (small file)
+          gh release upload "$TAG" release/SHA256SUMS --clobber
