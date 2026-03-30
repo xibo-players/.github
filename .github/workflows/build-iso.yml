@@ -31,6 +31,10 @@ on:
         type: boolean
         default: false
         description: 'Build self-contained ISO with all packages included (no network needed)'
+      blueprint-file:
+        type: string
+        default: 'osbuild/xiboplayer-kiosk.toml'
+        description: 'Path to osbuild-composer blueprint TOML for self-contained ISO'
       default-version:
         type: string
         default: '0.2.0'
@@ -273,12 +277,19 @@ jobs:
       options: --privileged
 
     steps:
-      - name: Install dependencies
+      - name: Install osbuild-composer
         run: |
-          dnf install -y \
-            lorax lorax-lmc-novirt pykickstart \
-            anaconda-core anaconda-install-env-deps \
-            curl createrepo_c
+          dnf install -y osbuild-composer composer-cli genisoimage xorriso
+          # Start osbuild-composer socket (systemd isn't running in container)
+          mkdir -p /run/weldr
+          /usr/libexec/osbuild-composer/osbuild-composer \
+            --weldr-api \
+            --socket /run/weldr/api.socket &
+          # Wait for socket
+          for i in $(seq 1 30); do
+            composer-cli status show 2>/dev/null && break
+            sleep 1
+          done
 
       - uses: actions/checkout@v4
 
@@ -294,50 +305,73 @@ jobs:
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Flatten kickstart for livemedia-creator
+      - name: Add custom repositories to osbuild-composer
         run: |
-          ksflatten -c "${{ inputs.kickstart-file }}" -o /tmp/flat.ks
-          # dracut-live is required by livemedia-creator for live ISO builds
-          sed -i '/%packages/a dracut-live' /tmp/flat.ks
-          cat /tmp/flat.ks
+          # Add xiboplayer repo source
+          cat > /tmp/xiboplayer-repo.toml << 'REPO'
+          id = "xiboplayer"
+          name = "Xibo Players"
+          type = "yum-baseurl"
+          url = "https://dl.xiboplayer.org/rpm/fedora/43/x86_64/"
+          check_gpg = false
+          check_ssl = true
+          system = false
+          REPO
+          composer-cli sources add /tmp/xiboplayer-repo.toml
 
-      - name: Build self-contained ISO with livemedia-creator
+          # Add RPM Fusion free
+          cat > /tmp/rpmfusion-free.toml << 'REPO'
+          id = "rpmfusion-free"
+          name = "RPM Fusion Free"
+          type = "yum-baseurl"
+          url = "https://download1.rpmfusion.org/free/fedora/releases/43/Everything/x86_64/os/"
+          check_gpg = false
+          check_ssl = true
+          system = false
+          REPO
+          composer-cli sources add /tmp/rpmfusion-free.toml
+
+          composer-cli sources list
+
+      - name: Push blueprint
+        run: |
+          composer-cli blueprints push "${{ inputs.blueprint-file }}"
+          composer-cli blueprints show ${{ inputs.package-name }}
+
+      - name: Build image
         env:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
-          livemedia-creator \
-            --make-iso \
-            --ks /tmp/flat.ks \
-            --no-virt \
-            --resultdir /tmp/lmc-result \
-            --project "$PACKAGE" \
-            --releasever 43 \
-            --volid "${PACKAGE}-${VERSION}" \
-            --iso-only \
-            --iso-name ${PACKAGE}-full_${VERSION}_x86_64.iso \
-            --macboot || \
-          (echo "Retrying after transient failure..." && sleep 10 && \
-           rm -rf /tmp/lmc-result && \
-           livemedia-creator \
-            --make-iso \
-            --ks /tmp/flat.ks \
-            --no-virt \
-            --resultdir /tmp/lmc-result \
-            --project "$PACKAGE" \
-            --releasever 43 \
-            --volid "${PACKAGE}-${VERSION}" \
-            --iso-only \
-            --iso-name ${PACKAGE}-full_${VERSION}_x86_64.iso \
-            --macboot)
+          # Start a compose for image-installer type (creates bootable ISO)
+          BUILD_ID=$(composer-cli compose start $PACKAGE image-installer | awk '{print $2}')
+          echo "Build ID: $BUILD_ID"
+
+          # Wait for build to complete (timeout 30 minutes)
+          for i in $(seq 1 180); do
+            STATUS=$(composer-cli compose status | grep "$BUILD_ID" | awk '{print $2}')
+            echo "[$i/180] Status: $STATUS"
+            if [ "$STATUS" = "FINISHED" ]; then
+              break
+            elif [ "$STATUS" = "FAILED" ]; then
+              echo "Build failed!"
+              composer-cli compose log "$BUILD_ID"
+              exit 1
+            fi
+            sleep 10
+          done
+
+          # Download the ISO
+          composer-cli compose image "$BUILD_ID"
+          mv *.iso ${PACKAGE}-selfcontained_${VERSION}_x86_64.iso
 
       - name: List ISO
-        run: ls -lah /tmp/lmc-result/*.iso
+        run: ls -lah *.iso
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.package-name }}-self-contained-iso
-          path: /tmp/lmc-result/*.iso
+          path: "*.iso"
           retention-days: 30
 
   release:
