@@ -195,15 +195,9 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          if [ "$ARCH" = "aarch64" ]; then
-            ISO_NAME="Fedora-Workstation-Live-43-1.6.aarch64.iso"
-            ISO_PATH="aarch64/iso"
-          else
-            ISO_NAME="Fedora-Workstation-Live-43-1.6.x86_64.iso"
-            ISO_PATH="x86_64/iso"
-          fi
+          ISO_NAME="Fedora-Workstation-Live-43-1.6.${ARCH}.iso"
           curl -L -o /tmp/fedora-workstation.iso \
-            "https://ftp.plusline.net/fedora/linux/releases/43/Workstation/${ISO_PATH}/${ISO_NAME}"
+            "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Workstation/${ARCH}/iso/${ISO_NAME}"
 
       - name: Build self-contained ISO
         env:
@@ -273,7 +267,7 @@ jobs:
       - name: Download Fedora Everything netinstall ISO
         run: |
           curl -L -o /tmp/fedora-netinst.iso \
-            "https://ftp.plusline.net/fedora/linux/releases/43/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-43-1.6.iso"
+            "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-43-1.6.iso"
 
       - name: Validate kickstart
         run: |
