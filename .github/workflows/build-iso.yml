@@ -363,3 +363,35 @@ jobs:
           gh release view "$TAG" --json tagName >/dev/null 2>&1 || \
             gh release create "$TAG" --title "${PACKAGE} ${TAG}" --notes ""
           gh release edit "$TAG" --notes "$NOTES"
+
+      - name: Generate SHA256SUMS and LATEST on R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          PACKAGE: ${{ inputs.package-name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          pip install awscli 2>/dev/null || true
+          BUCKET="s3://xiboplayer-images"
+          PREFIX="${PACKAGE}/${VERSION}"
+
+          # List all files for this version and generate checksums
+          mkdir -p /tmp/checksums
+          aws s3 ls "$BUCKET/$PREFIX/" --endpoint-url "$R2_ENDPOINT" | awk '{print $4}' | \
+          while read -r name; do
+            [ -n "$name" ] || continue
+            aws s3 cp "$BUCKET/$PREFIX/$name" "/tmp/checksums/$name" --endpoint-url "$R2_ENDPOINT"
+          done
+
+          (cd /tmp/checksums && sha256sum * > SHA256SUMS)
+          cat /tmp/checksums/SHA256SUMS
+
+          # Upload SHA256SUMS
+          aws s3 cp /tmp/checksums/SHA256SUMS "$BUCKET/$PREFIX/SHA256SUMS" \
+            --endpoint-url "$R2_ENDPOINT"
+
+          # Write LATEST version file
+          echo "$VERSION" > /tmp/LATEST
+          aws s3 cp /tmp/LATEST "$BUCKET/$PACKAGE/LATEST" \
+            --endpoint-url "$R2_ENDPOINT"
