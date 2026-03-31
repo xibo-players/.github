@@ -270,7 +270,7 @@ jobs:
           pip install awscli 2>/dev/null || sudo pip install awscli
 
           BUCKET="s3://xiboplayer-images"
-          DEST="$BUCKET/packages/$PACKAGE/latest"
+          DEST="$BUCKET/packages/$PACKAGE/deb"
 
           # Clear previous version and upload current
           aws s3 rm "$DEST/" --recursive --endpoint-url "$R2_ENDPOINT" 2>/dev/null || true
