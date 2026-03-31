@@ -196,7 +196,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           if [ "$ARCH" = "aarch64" ]; then
-            ISO_NAME="Fedora-Workstation-Live-aarch64-43-1.6.iso"
+            ISO_NAME="Fedora-Workstation-Live-43-1.6.aarch64.iso"
             ISO_PATH="aarch64/iso"
           else
             ISO_NAME="Fedora-Workstation-Live-43-1.6.x86_64.iso"
