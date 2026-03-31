@@ -6,63 +6,53 @@ on:
       package-name:
         required: true
         type: string
-        description: 'Package name for the kiosk image (e.g. xiboplayer-electron)'
+        description: 'Package name for the kiosk image (e.g. xiboplayer-kiosk)'
       kickstart-file:
         type: string
         default: 'kickstart/xibo-kiosk.ks'
-        description: 'Path to Kickstart file for installer ISO'
+        description: 'Path to Kickstart file'
       mkosi-config:
         type: string
         default: 'mkosi.conf'
         description: 'Path to mkosi configuration file'
-      build-installer:
-        type: boolean
-        default: true
-        description: 'Build installer ISO using kickstart'
       build-disk-images:
         type: boolean
         default: true
         description: 'Build disk images (QCOW2 and raw) using mkosi'
+      build-self-contained-iso:
+        type: boolean
+        default: false
+        description: 'Build self-contained ISO with all packages (no network needed)'
+      build-netinstall:
+        type: boolean
+        default: false
+        description: 'Build lightweight netinstall ISO (needs network during install)'
       architectures:
         type: string
         default: 'x86_64'
         description: 'Comma-separated list of architectures (x86_64, aarch64)'
-      build-self-contained-iso:
-        type: boolean
-        default: false
-        description: 'Build self-contained ISO with all packages included (no network needed)'
-      blueprint-file:
-        type: string
-        default: 'osbuild/xiboplayer-kiosk.toml'
-        description: 'Path to osbuild-composer blueprint TOML for self-contained ISO'
       default-version:
         type: string
         default: '0.2.0'
-      release-body:
-        type: string
-        default: ''
-        description: 'Custom release body markdown. Empty = auto-generated.'
 
 jobs:
-  build-disk-images-x86_64:
-    if: inputs.build-disk-images == true && contains(inputs.architectures, 'x86_64')
-    name: Build Disk Images (x86_64)
-    runs-on: ubuntu-latest
+  # ── Disk images (raw + QCOW2) via mkosi ──────────────────────────────
+  build-disk-images:
+    if: inputs.build-disk-images == true
+    name: Disk Images (${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     container:
       image: fedora:43
       options: --privileged
+    strategy:
+      matrix:
+        arch: ${{ fromJSON(contains(inputs.architectures, 'aarch64') && contains(inputs.architectures, 'x86_64') && '["x86_64","aarch64"]' || contains(inputs.architectures, 'aarch64') && '["aarch64"]' || '["x86_64"]') }}
 
     steps:
       - name: Install dependencies
         run: |
           dnf install -y \
-            git \
-            mkosi \
-            systemd-container \
-            qemu-img \
-            mtools \
-            xz \
-            awscli2
+            git mkosi systemd-container qemu-img mtools xz awscli2
 
       - uses: actions/checkout@v4
 
@@ -72,8 +62,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
           elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            TAG="${{ github.ref_name }}"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
           fi
@@ -81,108 +70,10 @@ jobs:
       - name: Prepare mkosi configuration
         run: |
           if [ -f "${{ inputs.mkosi-config }}" ]; then
-            echo "Using provided mkosi configuration"
             if [ "${{ inputs.mkosi-config }}" != "mkosi.conf" ]; then
               cp "${{ inputs.mkosi-config }}" mkosi.conf
             fi
           else
-            echo "Using template mkosi configuration"
-            cp scripts/mkosi/mkosi.conf.template mkosi.conf
-            sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}/" mkosi.conf
-          fi
-
-      - name: Set file permissions
-        run: |
-          find mkosi-extra -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
-          find mkosi-extra -type f -name "doas.conf" -exec chmod 600 {} \; 2>/dev/null || true
-
-      - name: Build disk image with mkosi
-        run: |
-          # Retry once on transient mirror/checksum failures
-          mkosi --force --image-version=${{ steps.version.outputs.version }} || \
-            (echo "Retrying after transient failure..." && sleep 10 && \
-             mkosi --force --image-version=${{ steps.version.outputs.version }})
-
-      - name: Convert and compress images
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE: ${{ inputs.package-name }}
-        run: |
-          cd output
-          # Rename raw image
-          mv *.raw ${PACKAGE}_${VERSION}_x86_64.raw 2>/dev/null || true
-          
-          # Create QCOW2 for VMs
-          if [ -f ${PACKAGE}_${VERSION}_x86_64.raw ]; then
-            qemu-img convert -f raw -O qcow2 -c ${PACKAGE}_${VERSION}_x86_64.raw ${PACKAGE}_${VERSION}_x86_64.qcow2
-            qemu-img resize ${PACKAGE}_${VERSION}_x86_64.qcow2 16G
-            
-            # Compress raw image
-            xz -T0 -9 ${PACKAGE}_${VERSION}_x86_64.raw
-          fi
-
-      - name: List output
-        run: ls -lah output/
-
-      - name: Upload to R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE: ${{ inputs.package-name }}
-        run: |
-          for file in output/*.qcow2 output/*.raw.xz; do
-            [ -f "$file" ] || continue
-            NAME=$(basename "$file")
-            echo "Uploading $NAME"
-            aws s3 cp "$file" "s3://xiboplayer-images/${PACKAGE}/${VERSION}/${NAME}" \
-              --endpoint-url "$R2_ENDPOINT"
-          done
-
-  build-disk-images-aarch64:
-    if: inputs.build-disk-images == true && contains(inputs.architectures, 'aarch64')
-    name: Build Disk Images (aarch64)
-    runs-on: ubuntu-24.04-arm
-    container:
-      image: fedora:43
-      options: --privileged
-
-    steps:
-      - name: Install dependencies
-        run: |
-          dnf install -y \
-            git \
-            mkosi \
-            systemd-container \
-            qemu-img \
-            mtools \
-            xz \
-            awscli2
-
-      - uses: actions/checkout@v4
-
-      - name: Determine version
-        id: version
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            TAG="${{ github.ref_name }}"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Prepare mkosi configuration
-        run: |
-          if [ -f "${{ inputs.mkosi-config }}" ]; then
-            echo "Using provided mkosi configuration"
-            if [ "${{ inputs.mkosi-config }}" != "mkosi.conf" ]; then
-              cp "${{ inputs.mkosi-config }}" mkosi.conf
-            fi
-          else
-            echo "Using template mkosi configuration"
             cp scripts/mkosi/mkosi.conf.template mkosi.conf
             sed -i "s/ImageId=.*/ImageId=${{ inputs.package-name }}/" mkosi.conf
           fi
@@ -195,24 +86,23 @@ jobs:
       - name: Build disk image
         run: |
           mkosi --force --image-version=${{ steps.version.outputs.version }} || \
-            (echo "Retrying after transient failure..." && sleep 10 && \
+            (echo "Retrying..." && sleep 10 && \
              mkosi --force --image-version=${{ steps.version.outputs.version }})
 
-      - name: Convert and compress images
+      - name: Convert and compress
         env:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
+          ARCH: ${{ matrix.arch }}
         run: |
           cd output
-          mv *.raw ${PACKAGE}_${VERSION}_aarch64.raw 2>/dev/null || true
+          mv *.raw ${PACKAGE}_${VERSION}_${ARCH}.raw 2>/dev/null || true
 
-          if [ -f ${PACKAGE}_${VERSION}_aarch64.raw ]; then
-            # Create QCOW2 for VMs (RPi testing in QEMU)
-            qemu-img convert -f raw -O qcow2 -c ${PACKAGE}_${VERSION}_aarch64.raw ${PACKAGE}_${VERSION}_aarch64.qcow2
-            qemu-img resize ${PACKAGE}_${VERSION}_aarch64.qcow2 16G
-
-            # Compress raw image
-            xz -T0 -9 ${PACKAGE}_${VERSION}_aarch64.raw
+          if [ -f ${PACKAGE}_${VERSION}_${ARCH}.raw ]; then
+            qemu-img convert -f raw -O qcow2 -c \
+              ${PACKAGE}_${VERSION}_${ARCH}.raw ${PACKAGE}_${VERSION}_${ARCH}.qcow2
+            qemu-img resize ${PACKAGE}_${VERSION}_${ARCH}.qcow2 16G
+            xz -T0 -9 ${PACKAGE}_${VERSION}_${ARCH}.raw
           fi
 
       - name: List output
@@ -234,9 +124,130 @@ jobs:
               --endpoint-url "$R2_ENDPOINT"
           done
 
+  # ── Self-contained ISO (offline install) ─────────────────────────────
   build-self-contained-iso:
     if: inputs.build-self-contained-iso == true
-    name: Build Self-Contained ISO
+    name: Offline ISO (${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    container:
+      image: fedora:43
+      options: --privileged
+    strategy:
+      matrix:
+        arch: ${{ fromJSON(contains(inputs.architectures, 'aarch64') && contains(inputs.architectures, 'x86_64') && '["x86_64","aarch64"]' || contains(inputs.architectures, 'aarch64') && '["aarch64"]' || '["x86_64"]') }}
+
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y \
+            lorax pykickstart createrepo_c dnf-plugins-core curl xz awscli2
+
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Add custom repositories
+        run: |
+          cat > /etc/yum.repos.d/xiboplayer.repo << 'EOF'
+          [xiboplayer]
+          name=Xibo Players
+          baseurl=https://dl.xiboplayer.org/rpm/fedora/$releasever/$basearch/
+          enabled=1
+          gpgcheck=0
+          EOF
+
+          dnf install -y \
+            https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-43.noarch.rpm \
+            https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-43.noarch.rpm
+
+      - name: Download extra packages
+        run: |
+          mkdir -p /tmp/local-repo
+
+          KS_PACKAGES=$(sed -n '/%packages/,/%end/p' "${{ inputs.kickstart-file }}" | \
+            grep -v '^%\|^#\|^-\|^@' | tr -s '\n' ' ')
+          POST_PACKAGES=$(grep 'dnf install -y' "${{ inputs.kickstart-file }}" | \
+            grep -v 'rpmfusion\|release' | sed 's/.*dnf install -y //' | tr -s '\n' ' ')
+
+          ALL_PACKAGES="$KS_PACKAGES $POST_PACKAGES"
+          echo "Downloading: $ALL_PACKAGES"
+
+          dnf download --resolve --alldeps --destdir=/tmp/local-repo $ALL_PACKAGES || true
+          createrepo_c /tmp/local-repo
+          echo "Local repo: $(ls /tmp/local-repo/*.rpm 2>/dev/null | wc -l) packages"
+
+      - name: Create offline kickstart
+        run: |
+          cp "${{ inputs.kickstart-file }}" /tmp/selfcontained.ks
+          sed -i '/^url /d; /^repo /d' /tmp/selfcontained.ks
+          sed -i '/^skipx/a repo --name=local-extras --baseurl=file:///run/install/repo/local-repo/' /tmp/selfcontained.ks
+
+      - name: Download Fedora Workstation Live ISO
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          if [ "$ARCH" = "aarch64" ]; then
+            ISO_NAME="Fedora-Workstation-Live-aarch64-43-1.6.iso"
+            ISO_PATH="aarch64/iso"
+          else
+            ISO_NAME="Fedora-Workstation-Live-43-1.6.x86_64.iso"
+            ISO_PATH="x86_64/iso"
+          fi
+          curl -L -o /tmp/fedora-workstation.iso \
+            "https://ftp.plusline.net/fedora/linux/releases/43/Workstation/${ISO_PATH}/${ISO_NAME}"
+
+      - name: Build self-contained ISO
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p /tmp/iso-extra/local-repo
+          cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
+
+          mkksiso --skip-mkefiboot \
+            --ks /tmp/selfcontained.ks \
+            --add /tmp/iso-extra \
+            /tmp/fedora-workstation.iso \
+            ${PACKAGE}-installer_${VERSION}_${ARCH}.iso || \
+          (echo "Retrying..." && sleep 10 && \
+           mkksiso --skip-mkefiboot \
+            --ks /tmp/selfcontained.ks \
+            --add /tmp/iso-extra \
+            /tmp/fedora-workstation.iso \
+            ${PACKAGE}-installer_${VERSION}_${ARCH}.iso)
+
+          ls -lah ${PACKAGE}-installer_${VERSION}_${ARCH}.iso
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+        run: |
+          for file in *.iso; do
+            [ -f "$file" ] || continue
+            NAME=$(basename "$file")
+            echo "Uploading $NAME"
+            aws s3 cp "$file" "s3://xiboplayer-images/${PACKAGE}/${VERSION}/${NAME}" \
+              --endpoint-url "$R2_ENDPOINT"
+          done
+
+  # ── Netinstall ISO (lightweight, needs network) ──────────────────────
+  build-netinstall:
+    if: inputs.build-netinstall == true && contains(inputs.architectures, 'x86_64')
+    name: Netinstall ISO (x86_64)
     runs-on: ubuntu-latest
     container:
       image: fedora:43
@@ -244,11 +255,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: |
-          dnf install -y \
-            lorax pykickstart createrepo_c \
-            dnf-plugins-core curl xz \
-            awscli2
+        run: dnf install -y lorax pykickstart curl awscli2
 
       - uses: actions/checkout@v4
 
@@ -258,97 +265,30 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
           elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            TAG="${{ github.ref_name }}"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Add custom repositories
+      - name: Download Fedora Everything netinstall ISO
         run: |
-          # Add xiboplayer repo
-          cat > /etc/yum.repos.d/xiboplayer.repo << 'EOF'
-          [xiboplayer]
-          name=Xibo Players
-          baseurl=https://dl.xiboplayer.org/rpm/fedora/$releasever/$basearch/
-          enabled=1
-          gpgcheck=0
-          EOF
+          curl -L -o /tmp/fedora-netinst.iso \
+            "https://ftp.plusline.net/fedora/linux/releases/43/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-43-1.6.iso"
 
-          # Add RPM Fusion
-          dnf install -y \
-            https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-43.noarch.rpm \
-            https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-43.noarch.rpm
+      - name: Validate kickstart
+        run: ksvalidator "${{ inputs.kickstart-file }}" || echo "Warning: validation issues"
 
-      - name: Download extra packages not on Workstation ISO
-        run: |
-          mkdir -p /tmp/local-repo
-
-          # Workstation Live already has: GNOME, Wayland, GDM, NetworkManager,
-          # kernel, grub, firefox, fonts, hardware-support, etc.
-          # We only need our extras + media packages not on Workstation.
-
-          # Parse packages from kickstart %packages section
-          KS_PACKAGES=$(sed -n '/%packages/,/%end/p' "${{ inputs.kickstart-file }}" | \
-            grep -v '^%\|^#\|^-\|^@' | tr -s '\n' ' ')
-
-          # Post-install packages (from %post dnf install commands)
-          POST_PACKAGES=$(grep 'dnf install -y' "${{ inputs.kickstart-file }}" | \
-            grep -v 'rpmfusion\|release' | sed 's/.*dnf install -y //' | tr -s '\n' ' ')
-
-          ALL_PACKAGES="$KS_PACKAGES $POST_PACKAGES"
-          echo "Downloading extra packages: $ALL_PACKAGES"
-
-          # Download with all dependencies
-          dnf download --resolve --alldeps --destdir=/tmp/local-repo \
-            $ALL_PACKAGES || true
-
-          # Create repo metadata
-          createrepo_c /tmp/local-repo
-          PKG_COUNT=$(ls /tmp/local-repo/*.rpm 2>/dev/null | wc -l)
-          REPO_SIZE=$(du -sh /tmp/local-repo | cut -f1)
-          echo "Local repo: $PKG_COUNT packages, $REPO_SIZE"
-
-      - name: Create offline kickstart
-        run: |
-          cp "${{ inputs.kickstart-file }}" /tmp/selfcontained.ks
-
-          # Remove network install source
-          sed -i '/^url /d; /^repo /d' /tmp/selfcontained.ks
-
-          # Add local repo for extra packages embedded on the ISO
-          sed -i '/^skipx/a repo --name=local-extras --baseurl=file:///run/install/repo/local-repo/' /tmp/selfcontained.ks
-
-          echo "=== Offline kickstart ==="
-          head -30 /tmp/selfcontained.ks
-
-      - name: Download Fedora Workstation Live ISO
-        run: |
-          curl -L -o /tmp/fedora-workstation.iso \
-            "https://ftp.plusline.net/fedora/linux/releases/43/Workstation/x86_64/iso/Fedora-Workstation-Live-43-1.6.x86_64.iso"
-
-      - name: Build self-contained ISO
+      - name: Build netinstall ISO
         env:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
-          # Embed kickstart + extra package repo into Workstation ISO
-          mkdir -p /tmp/iso-extra/local-repo
-          cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
-
           mkksiso --skip-mkefiboot \
-            --ks /tmp/selfcontained.ks \
-            --add /tmp/iso-extra \
-            /tmp/fedora-workstation.iso \
-            ${PACKAGE}-installer_${VERSION}_x86_64.iso || \
-          (echo "Retrying..." && sleep 10 && \
-           mkksiso --skip-mkefiboot \
-            --ks /tmp/selfcontained.ks \
-            --add /tmp/iso-extra \
-            /tmp/fedora-workstation.iso \
-            ${PACKAGE}-installer_${VERSION}_x86_64.iso)
+            --ks "${{ inputs.kickstart-file }}" \
+            /tmp/fedora-netinst.iso \
+            ${PACKAGE}-netinstall_${VERSION}_x86_64.iso
 
-          ls -lah ${PACKAGE}-installer_${VERSION}_x86_64.iso
+          ls -lah ${PACKAGE}-netinstall_${VERSION}_x86_64.iso
 
       - name: Upload to R2
         env:
@@ -366,137 +306,11 @@ jobs:
               --endpoint-url "$R2_ENDPOINT"
           done
 
-  build-self-contained-iso-aarch64:
-    if: inputs.build-self-contained-iso == true && contains(inputs.architectures, 'aarch64')
-    name: Build Self-Contained ISO (aarch64)
-    runs-on: ubuntu-24.04-arm
-    container:
-      image: fedora:43
-      options: --privileged
-
-    steps:
-      - name: Install dependencies
-        run: |
-          dnf install -y \
-            lorax pykickstart createrepo_c \
-            dnf-plugins-core curl xz \
-            awscli2
-
-      - uses: actions/checkout@v4
-
-      - name: Determine version
-        id: version
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            TAG="${{ github.ref_name }}"
-            echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Add custom repositories
-        run: |
-          # Add xiboplayer repo
-          cat > /etc/yum.repos.d/xiboplayer.repo << 'EOF'
-          [xiboplayer]
-          name=Xibo Players
-          baseurl=https://dl.xiboplayer.org/rpm/fedora/$releasever/$basearch/
-          enabled=1
-          gpgcheck=0
-          EOF
-
-          # Add RPM Fusion
-          dnf install -y \
-            https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-43.noarch.rpm \
-            https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-43.noarch.rpm
-
-      - name: Download extra packages not on Workstation ISO
-        run: |
-          mkdir -p /tmp/local-repo
-
-          # Parse packages from kickstart %packages section
-          KS_PACKAGES=$(sed -n '/%packages/,/%end/p' "${{ inputs.kickstart-file }}" | \
-            grep -v '^%\|^#\|^-\|^@' | tr -s '\n' ' ')
-
-          # Post-install packages (from %post dnf install commands)
-          POST_PACKAGES=$(grep 'dnf install -y' "${{ inputs.kickstart-file }}" | \
-            grep -v 'rpmfusion\|release' | sed 's/.*dnf install -y //' | tr -s '\n' ' ')
-
-          ALL_PACKAGES="$KS_PACKAGES $POST_PACKAGES"
-          echo "Downloading extra packages: $ALL_PACKAGES"
-
-          # Download with all dependencies
-          dnf download --resolve --alldeps --destdir=/tmp/local-repo \
-            $ALL_PACKAGES || true
-
-          # Create repo metadata
-          createrepo_c /tmp/local-repo
-          PKG_COUNT=$(ls /tmp/local-repo/*.rpm 2>/dev/null | wc -l)
-          REPO_SIZE=$(du -sh /tmp/local-repo | cut -f1)
-          echo "Local repo: $PKG_COUNT packages, $REPO_SIZE"
-
-      - name: Create offline kickstart
-        run: |
-          cp "${{ inputs.kickstart-file }}" /tmp/selfcontained.ks
-
-          # Remove network install source
-          sed -i '/^url /d; /^repo /d' /tmp/selfcontained.ks
-
-          # Add local repo for extra packages embedded on the ISO
-          sed -i '/^skipx/a repo --name=local-extras --baseurl=file:///run/install/repo/local-repo/' /tmp/selfcontained.ks
-
-          echo "=== Offline kickstart ==="
-          head -30 /tmp/selfcontained.ks
-
-      - name: Download Fedora Workstation Live ISO (aarch64)
-        run: |
-          curl -L -o /tmp/fedora-workstation.iso \
-            "https://ftp.plusline.net/fedora/linux/releases/43/Workstation/aarch64/iso/Fedora-Workstation-Live-aarch64-43-1.6.iso"
-
-      - name: Build self-contained ISO
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE: ${{ inputs.package-name }}
-        run: |
-          mkdir -p /tmp/iso-extra/local-repo
-          cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
-
-          mkksiso --skip-mkefiboot \
-            --ks /tmp/selfcontained.ks \
-            --add /tmp/iso-extra \
-            /tmp/fedora-workstation.iso \
-            ${PACKAGE}-installer_${VERSION}_aarch64.iso || \
-          (echo "Retrying..." && sleep 10 && \
-           mkksiso --skip-mkefiboot \
-            --ks /tmp/selfcontained.ks \
-            --add /tmp/iso-extra \
-            /tmp/fedora-workstation.iso \
-            ${PACKAGE}-installer_${VERSION}_aarch64.iso)
-
-          ls -lah ${PACKAGE}-installer_${VERSION}_aarch64.iso
-
-      - name: Upload to R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-          VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE: ${{ inputs.package-name }}
-        run: |
-          for file in *.iso; do
-            [ -f "$file" ] || continue
-            NAME=$(basename "$file")
-            echo "Uploading $NAME"
-            aws s3 cp "$file" "s3://xiboplayer-images/${PACKAGE}/${VERSION}/${NAME}" \
-              --endpoint-url "$R2_ENDPOINT"
-          done
-
+  # ── GitHub Release with download links ───────────────────────────────
   release:
     name: Create GitHub Release
-    needs: [build-disk-images-x86_64, build-disk-images-aarch64, build-self-contained-iso, build-self-contained-iso-aarch64]
-    if: always() && (needs.build-disk-images-x86_64.result == 'success' || needs.build-disk-images-aarch64.result == 'success' || needs.build-self-contained-iso.result == 'success' || needs.build-self-contained-iso-aarch64.result == 'success')
+    needs: [build-disk-images, build-self-contained-iso, build-netinstall]
+    if: always() && (needs.build-disk-images.result == 'success' || needs.build-self-contained-iso.result == 'success' || needs.build-netinstall.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -515,7 +329,7 @@ jobs:
             echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create GitHub Release (metadata + download links)
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
@@ -526,40 +340,23 @@ jobs:
           NOTES=$(cat <<NOTES_EOF
           # ${PACKAGE} ${TAG}
 
-          Turn any PC or Raspberry Pi into a digital signage kiosk — just flash, boot, and connect to your Xibo CMS.
+          Turn any PC or Raspberry Pi into a digital signage kiosk.
 
           ## Download images
 
           | Image | Hardware | Download |
           |-------|----------|----------|
-          | **Installer ISO (x86_64)** | Any PC or laptop | [${PACKAGE}-installer_${VERSION}_x86_64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-installer_${VERSION}_x86_64.iso) |
-          | **Installer ISO (aarch64)** | ARM mini PCs | [${PACKAGE}-installer_${VERSION}_aarch64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-installer_${VERSION}_aarch64.iso) |
+          | **Offline ISO (x86_64)** | Any PC or laptop | [${PACKAGE}-installer_${VERSION}_x86_64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-installer_${VERSION}_x86_64.iso) |
+          | **Offline ISO (aarch64)** | ARM mini PCs | [${PACKAGE}-installer_${VERSION}_aarch64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-installer_${VERSION}_aarch64.iso) |
+          | **Netinstall ISO** | PC (needs network) | [${PACKAGE}-netinstall_${VERSION}_x86_64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-netinstall_${VERSION}_x86_64.iso) |
           | **Raw disk (aarch64)** | Raspberry Pi 4/5 | [${PACKAGE}_${VERSION}_aarch64.raw.xz](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_aarch64.raw.xz) |
           | **Raw disk (x86_64)** | Intel NUC, embedded | [${PACKAGE}_${VERSION}_x86_64.raw.xz](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_x86_64.raw.xz) |
           | **QCOW2 (x86_64)** | Virtual machines | [${PACKAGE}_${VERSION}_x86_64.qcow2](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_x86_64.qcow2) |
           | **QCOW2 (aarch64)** | RPi VM testing | [${PACKAGE}_${VERSION}_aarch64.qcow2](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_aarch64.qcow2) |
-          | **Checksums** | Verify downloads | [SHA256SUMS](${DL}/${PACKAGE}/${VERSION}/SHA256SUMS) |
-
-          ## Quick start
-
-          ### 🖥️ PC or laptop — Installer ISO
-          1. Download the ISO and flash to USB with [Balena Etcher](https://etcher.balena.io/) or \`dd\`
-          2. Boot from USB — fully automated install, no network needed
-          3. Remove USB, reboot
-
-          ### 🍓 Raspberry Pi 4/5 — Raw image
-          1. Download and flash to SD card with [Balena Etcher](https://etcher.balena.io/)
-          2. Insert SD card, power on — boots ready to use
-
-          ### 💻 Virtual machine — QCOW2
-          1. Download and open with GNOME Boxes, virt-manager, Proxmox or QEMU
 
           ## After booting
 
-          1. Log in: \`xibo\` / \`xibo\`
-          2. Change password: \`passwd\`
-          3. Connect to your Xibo CMS from the setup screen
-          4. Content plays automatically
+          See the [first-boot guide](https://www.xiboplayer.org/guide/first-boot) for setup instructions.
           NOTES_EOF
           )
 
