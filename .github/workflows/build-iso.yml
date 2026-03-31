@@ -276,7 +276,8 @@ jobs:
             "https://ftp.plusline.net/fedora/linux/releases/43/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-43-1.6.iso"
 
       - name: Validate kickstart
-        run: ksvalidator "${{ inputs.kickstart-file }}" || echo "Warning: validation issues"
+        run: |
+          ksvalidator "${{ inputs.kickstart-file }}" || echo "Kickstart validation warnings (non-fatal)"
 
       - name: Build netinstall ISO
         env:
