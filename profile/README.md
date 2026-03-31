@@ -14,7 +14,7 @@ Download a ready-made kiosk image. Flash to USB or SD card, boot and your displa
 
 <table>
 <tr>
-<td width="25%" align="center">
+<td width="25%" align="center" valign="top">
 
 **🖥️ PC / laptop**
 
@@ -24,7 +24,7 @@ Flash to USB, boot.
 Fully offline — no network needed.
 
 </td>
-<td width="25%" align="center">
+<td width="25%" align="center" valign="top">
 
 **🍓 Raspberry Pi 4/5**
 
@@ -34,7 +34,7 @@ Flash `.raw.xz` to SD card.
 Insert, power on, done.
 
 </td>
-<td width="25%" align="center">
+<td width="25%" align="center" valign="top">
 
 **💻 Virtual machine**
 
@@ -44,7 +44,7 @@ Open in GNOME Boxes,
 virt-manager or QEMU.
 
 </td>
-<td width="25%" align="center">
+<td width="25%" align="center" valign="top">
 
 **🔧 NUC / embedded**
 
