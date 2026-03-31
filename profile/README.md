@@ -1,8 +1,4 @@
-<img alt="XiboPlayer" src="https://www.xiboplayer.org/logo-192.png" width="64">
-
-### Free open-source signage players for [Xibo CMS](https://xibosignage.com)
-
-Turn any Linux PC, Raspberry Pi or virtual machine into a digital signage kiosk. Download an image, flash it, boot and connect to your CMS. That's it.
+Turn any Linux PC, Raspberry Pi or virtual machine into a digital signage kiosk. Download an image, flash it, boot and connect to your [Xibo CMS](https://xibosignage.com). That's it.
 
 > **Community project** — not affiliated with Xibo Signage Ltd. [Xibo](https://xibosignage.com) is a trademark of Xibo Ltd.
 
