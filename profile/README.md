@@ -2,72 +2,128 @@
 
 ### Free open-source signage players for [Xibo CMS](https://xibosignage.com)
 
-Turn any Linux PC, Raspberry Pi, Android device or web browser into a digital signage display. Cross-platform, offline-first, cross-device video walls, GPU-accelerated and built on a modular TypeScript SDK with 1629 tests.
+Turn any Linux PC, Raspberry Pi or virtual machine into a digital signage kiosk. Download an image, flash it, boot and connect to your CMS. That's it.
 
 > **Community project** — not affiliated with Xibo Signage Ltd. [Xibo](https://xibosignage.com) is a trademark of Xibo Ltd.
 
 ---
 
-## Quickstart: flash and boot
+## Get started in minutes
 
-Download a [pre-built kiosk image](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest), flash it, and connect to your CMS. That's it.
+Download a ready-made kiosk image. Flash to USB or SD card, boot and your display is ready. No Linux experience needed.
 
-| Hardware | Image | Instructions |
-|----------|-------|--------------|
-| PC / laptop | [ISO installer](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest) | Flash to USB, boot — fully automated install |
-| Raspberry Pi 4/5 | [Raw aarch64](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest) | Flash `.raw.xz` to SD card, insert, power on |
-| Virtual machine | [QCOW2](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest) | Open in GNOME Boxes, virt-manager, Proxmox, or QEMU |
-| Intel NUC / embedded | [Raw x86_64](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest) | Flash `.raw.xz` to SSD or SD card |
+<table>
+<tr>
+<td width="25%" align="center">
 
-Default login: `xibo` / `xibo` — change your password, then connect to your CMS from the setup screen.
+**🖥️ PC / laptop**
 
-## Choose your player
+[Everything ISO](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
 
-| Player | What it does | Platforms |
-|--------|-------------|-----------|
-| [**Electron**](https://github.com/xibo-players/xiboplayer-electron) | Self-contained desktop app with built-in browser. Production-ready kiosk with GPU acceleration, systemd integration, and multi-instance support. | RPM, DEB — x86_64, aarch64 |
-| [**Chromium Kiosk**](https://github.com/xibo-players/xiboplayer-chromium) | Lightweight — uses the system Chromium browser. Smallest footprint (~5 MB). | RPM, DEB — noarch |
-| [**PWA**](https://github.com/xibo-players/xiboplayer/tree/main/packages/pwa) | Browser-based engine that powers all players. Deploy on your CMS and open a URL — zero installation. | Any modern browser |
-| [**Xibo Kiosk**](https://github.com/xibo-players/xiboplayer-kiosk) | Complete kiosk OS — GNOME Kiosk session with auto-login, registration wizard, health monitoring. Pre-built bootable images. | ISO, QCOW2, raw |
-| [**arexibo**](https://github.com/xibo-players/arexibo) | Native Rust player with Qt6 WebEngine. Serial port control for industrial signage. | RPM, DEB — x86_64, aarch64 |
+Flash to USB, boot.
+Fully offline — no network needed.
+
+</td>
+<td width="25%" align="center">
+
+**🍓 Raspberry Pi 4/5**
+
+[Raw disk image](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
+
+Flash `.raw.xz` to SD card.
+Insert, power on, done.
+
+</td>
+<td width="25%" align="center">
+
+**💻 Virtual machine**
+
+[QCOW2 image](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
+
+Open in GNOME Boxes,
+virt-manager or QEMU.
+
+</td>
+<td width="25%" align="center">
+
+**🔧 NUC / embedded**
+
+[Raw x86_64 image](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
+
+Flash to SSD or eMMC.
+Works on any x86_64 board.
+
+</td>
+</tr>
+</table>
+
+Default login: `xibo` / `xibo` — change your password after first boot.
+
+**[All images and downloads](https://www.xiboplayer.org/downloads/)** | **[First-boot guide](https://www.xiboplayer.org/guide/first-boot)** | **[Quick start](https://www.xiboplayer.org/guide/quick-start)**
+
+---
 
 ## Install on existing Linux
 
-**Fedora 43+**
-```bash
-sudo dnf install \
-  https://dl.xiboplayer.org/rpm/fedora/43/noarch/xiboplayer-release-43-7.fc43.noarch.rpm
+Already have Fedora, Ubuntu or Debian? Add the repo and install.
 
-sudo dnf install xiboplayer-kiosk        # Full kiosk environment
-sudo dnf install xiboplayer-electron     # Electron player
-sudo dnf install xiboplayer-chromium     # Chromium kiosk
-sudo dnf install arexibo                 # Native Rust player
+**Fedora**
+```bash
+sudo dnf install https://dl.xiboplayer.org/rpm/fedora/43/noarch/xiboplayer-release-43-7.fc43.noarch.rpm
+sudo dnf install xiboplayer-kiosk xiboplayer-electron
 ```
 
-**Debian Trixie / Ubuntu 24.04 / Raspberry Pi OS**
+**Ubuntu / Debian / Raspberry Pi OS**
 ```bash
 curl -fsSL https://dl.xiboplayer.org/deb/DEB-GPG-KEY-xiboplayer | \
   sudo tee /etc/apt/keyrings/xiboplayer.asc > /dev/null
 echo "deb [signed-by=/etc/apt/keyrings/xiboplayer.asc] https://dl.xiboplayer.org/deb/debian/trixie ./" | \
   sudo tee /etc/apt/sources.list.d/xiboplayer.list
-
-sudo apt update && sudo apt install xiboplayer-chromium
+sudo apt update && sudo apt install xiboplayer-kiosk xiboplayer-electron
 ```
+
+**[Full installation guide](https://www.xiboplayer.org/downloads/)**
+
+---
+
+## Players
+
+Multiple player implementations to fit your hardware and use case.
+
+| Player | Description | Platforms |
+|--------|-------------|-----------|
+| [**Electron**](https://github.com/xibo-players/xiboplayer-electron) | Full-featured desktop app with GPU acceleration and multi-instance support | RPM, DEB — x86_64, aarch64 |
+| [**Chromium Kiosk**](https://github.com/xibo-players/xiboplayer-chromium) | Lightweight — uses system Chromium, smallest footprint (~5 MB) | RPM, DEB — noarch |
+| [**PWA**](https://github.com/xibo-players/xiboplayer/tree/main/packages/pwa) | Browser-based player — open a URL, zero installation | Any modern browser |
+| [**arexibo**](https://github.com/xibo-players/arexibo) | Native Rust player with Qt6 WebEngine and serial port control | RPM, DEB — x86_64, aarch64 |
+| [**Kiosk**](https://github.com/xibo-players/xiboplayer-kiosk) | Complete kiosk OS — GNOME Kiosk session, auto-login, health monitoring | ISO, QCOW2, raw images |
+
+Switch players at any time: `doas alternatives --config xiboplayer`
+
+**[Player comparison](https://www.xiboplayer.org/features/comparison)** | **[All players](https://www.xiboplayer.org/players)**
+
+---
 
 ## SDK
 
-All players are built on the **[@xiboplayer SDK](https://github.com/xibo-players/xiboplayer)** — 14 modular TypeScript packages for caching, rendering, scheduling, CMS communication (SOAP + REST), XMR real-time commands, multi-display sync, and more.
+All players are built on the **[@xiboplayer SDK](https://github.com/xibo-players/xiboplayer)** — 14 modular TypeScript packages for building digital signage applications.
+
+Caching, rendering, scheduling, CMS communication (SOAP + REST), XMR real-time commands, multi-display sync and more.
 
 ```bash
 npm install @xiboplayer/core @xiboplayer/renderer @xiboplayer/cache @xiboplayer/schedule @xiboplayer/xmds
 ```
 
+**[SDK documentation](https://www.xiboplayer.org/sdk)** | **[npm packages](https://www.npmjs.com/org/xiboplayer)**
+
+---
+
 ## Links
 
 | | |
 |---|---|
-| **[xiboplayer.org](https://www.xiboplayer.org)** | Players, guides, downloads and documentation |
-| **[Feature comparison](https://www.xiboplayer.org/features/comparison)** | 53 features, 5% CPU, zero memory leaks — vs upstream players |
-| **[Blog](https://www.xiboplayer.org/blog)** | Guides and tutorials about digital signage |
+| **[xiboplayer.org](https://www.xiboplayer.org)** | Website — players, guides, downloads |
 | **[Downloads](https://www.xiboplayer.org/downloads)** | Bootable images, RPM and DEB packages |
-| **[npm packages](https://www.npmjs.com/org/xiboplayer)** | 14 SDK packages on npm |
+| **[Features](https://www.xiboplayer.org/features)** | Feature comparison vs upstream players |
+| **[Blog](https://www.xiboplayer.org/blog)** | Guides and tutorials |
+| **[First-boot guide](https://www.xiboplayer.org/guide/first-boot)** | Post-install setup steps |
