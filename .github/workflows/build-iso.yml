@@ -155,6 +155,7 @@ jobs:
             git \
             mkosi \
             systemd-container \
+            qemu-img \
             mtools \
             xz \
             awscli2
@@ -197,14 +198,20 @@ jobs:
             (echo "Retrying after transient failure..." && sleep 10 && \
              mkosi --force --image-version=${{ steps.version.outputs.version }})
 
-      - name: Rename and compress
+      - name: Convert and compress images
         env:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
           cd output
           mv *.raw ${PACKAGE}_${VERSION}_aarch64.raw 2>/dev/null || true
+
           if [ -f ${PACKAGE}_${VERSION}_aarch64.raw ]; then
+            # Create QCOW2 for VMs (RPi testing in QEMU)
+            qemu-img convert -f raw -O qcow2 -c ${PACKAGE}_${VERSION}_aarch64.raw ${PACKAGE}_${VERSION}_aarch64.qcow2
+            qemu-img resize ${PACKAGE}_${VERSION}_aarch64.qcow2 16G
+
+            # Compress raw image
             xz -T0 -9 ${PACKAGE}_${VERSION}_aarch64.raw
           fi
 
@@ -219,7 +226,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
-          for file in output/*.raw.xz; do
+          for file in output/*.qcow2 output/*.raw.xz; do
             [ -f "$file" ] || continue
             NAME=$(basename "$file")
             echo "Uploading $NAME"
@@ -529,7 +536,8 @@ jobs:
           | **Installer ISO (aarch64)** | ARM mini PCs | [${PACKAGE}-installer_${VERSION}_aarch64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-installer_${VERSION}_aarch64.iso) |
           | **Raw disk (aarch64)** | Raspberry Pi 4/5 | [${PACKAGE}_${VERSION}_aarch64.raw.xz](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_aarch64.raw.xz) |
           | **Raw disk (x86_64)** | Intel NUC, embedded | [${PACKAGE}_${VERSION}_x86_64.raw.xz](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_x86_64.raw.xz) |
-          | **QCOW2** | Virtual machines | [${PACKAGE}_${VERSION}_x86_64.qcow2](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_x86_64.qcow2) |
+          | **QCOW2 (x86_64)** | Virtual machines | [${PACKAGE}_${VERSION}_x86_64.qcow2](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_x86_64.qcow2) |
+          | **QCOW2 (aarch64)** | RPi VM testing | [${PACKAGE}_${VERSION}_aarch64.qcow2](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_aarch64.qcow2) |
           | **Checksums** | Verify downloads | [SHA256SUMS](${DL}/${PACKAGE}/${VERSION}/SHA256SUMS) |
 
           ## Quick start
