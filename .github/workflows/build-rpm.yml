@@ -132,7 +132,8 @@ jobs:
               local ver rel
               ver=$(grep -m1 '^Version:' "$spec" | awk '{print $2}')
               rel=$(grep -m1 '^Release:' "$spec" | awk '{print $2}' | sed 's/%{?dist}//')
-              if [[ -n "$ver" ]]; then
+              # Reject macro placeholders like %{_version}
+              if [[ -n "$ver" && "$ver" != *"%"* ]]; then
                 echo "version=${ver}" >> "$GITHUB_OUTPUT"
                 echo "release=${rel:-1}" >> "$GITHUB_OUTPUT"
                 echo "Parsed from spec: version=${ver}, release=${rel:-1}"
