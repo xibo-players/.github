@@ -218,15 +218,15 @@ jobs:
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-workstation.iso \
-            ${PACKAGE}-installer_${VERSION}_${ARCH}.iso || \
+            ${PACKAGE}-everything_${VERSION}_${ARCH}.iso || \
           (echo "Retrying..." && sleep 10 && \
            mkksiso --skip-mkefiboot \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-workstation.iso \
-            ${PACKAGE}-installer_${VERSION}_${ARCH}.iso)
+            ${PACKAGE}-everything_${VERSION}_${ARCH}.iso)
 
-          ls -lah ${PACKAGE}-installer_${VERSION}_${ARCH}.iso
+          ls -lah ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
 
       - name: Upload to R2
         env:
@@ -346,8 +346,8 @@ jobs:
 
           | Image | Hardware | Download |
           |-------|----------|----------|
-          | **Offline ISO (x86_64)** | Any PC or laptop | [${PACKAGE}-installer_${VERSION}_x86_64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-installer_${VERSION}_x86_64.iso) |
-          | **Offline ISO (aarch64)** | ARM mini PCs | [${PACKAGE}-installer_${VERSION}_aarch64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-installer_${VERSION}_aarch64.iso) |
+          | **Offline ISO (x86_64)** | Any PC or laptop | [${PACKAGE}-everything_${VERSION}_x86_64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-everything_${VERSION}_x86_64.iso) |
+          | **Offline ISO (aarch64)** | ARM mini PCs | [${PACKAGE}-everything_${VERSION}_aarch64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-everything_${VERSION}_aarch64.iso) |
           | **Netinstall ISO** | PC (needs network) | [${PACKAGE}-netinstall_${VERSION}_x86_64.iso](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}-netinstall_${VERSION}_x86_64.iso) |
           | **Raw disk (aarch64)** | Raspberry Pi 4/5 | [${PACKAGE}_${VERSION}_aarch64.raw.xz](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_aarch64.raw.xz) |
           | **Raw disk (x86_64)** | Intel NUC, embedded | [${PACKAGE}_${VERSION}_x86_64.raw.xz](${DL}/${PACKAGE}/${VERSION}/${PACKAGE}_${VERSION}_x86_64.raw.xz) |
