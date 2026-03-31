@@ -18,40 +18,36 @@ Download a ready-made kiosk image. Flash to USB or SD card, boot and your displa
 
 **🖥️ PC / laptop**
 
-[Everything ISO](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
+Flash to USB, boot.<br>Fully offline — no network needed.
 
-Flash to USB, boot.
-Fully offline — no network needed.
+[Download ISO](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
 
 </td>
 <td width="25%" align="center" valign="top">
 
 **🍓 Raspberry Pi 4/5**
 
-[Raw disk image](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
+Flash `.raw.xz` to SD card.<br>Insert, power on, done.
 
-Flash `.raw.xz` to SD card.
-Insert, power on, done.
+[Download image](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
 
 </td>
 <td width="25%" align="center" valign="top">
 
 **💻 Virtual machine**
 
-[QCOW2 image](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
+Open in GNOME Boxes,<br>virt-manager or QEMU.
 
-Open in GNOME Boxes,
-virt-manager or QEMU.
+[Download QCOW2](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
 
 </td>
 <td width="25%" align="center" valign="top">
 
 **🔧 NUC / embedded**
 
-[Raw x86_64 image](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
+Flash to SSD or eMMC.<br>Works on any x86_64 board.
 
-Flash to SSD or eMMC.
-Works on any x86_64 board.
+[Download image](https://github.com/xibo-players/xiboplayer-kiosk/releases/latest)
 
 </td>
 </tr>
