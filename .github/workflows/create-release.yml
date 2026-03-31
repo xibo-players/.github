@@ -6,25 +6,12 @@ on:
       package-name:
         required: true
         type: string
-        description: 'Package name (e.g. xiboplayer-electron)'
-      has-rpm:
-        type: boolean
-        default: true
-      has-deb:
-        type: boolean
-        default: true
-      rpm-arch:
-        type: string
-        default: 'noarch'
-        description: 'RPM architectures: noarch, x86_64, or x86_64+aarch64'
-      deb-arch:
-        type: string
-        default: 'all'
-        description: 'DEB architectures: all, amd64, or amd64+arm64'
       description:
         type: string
         default: ''
-        description: 'Short package description for the release body'
+      changelog:
+        type: string
+        default: ''
 
 jobs:
   release:
@@ -35,72 +22,34 @@ jobs:
       contents: write
 
     steps:
-      - name: Create release with download links
+      - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
           PKG: ${{ inputs.package-name }}
-          DL: https://dl.xiboplayer.org
         run: |
           VERSION="${TAG#v}"
-
-          # Build RPM download table
-          RPM_TABLE=""
-          if [ "${{ inputs.has-rpm }}" = "true" ]; then
-            case "${{ inputs.rpm-arch }}" in
-              noarch)
-                RPM_TABLE="| **RPM** (Fedora 43) | noarch | [${PKG}-${VERSION}-1.fc43.noarch.rpm](${DL}/rpm/fedora/43/noarch/${PKG}-${VERSION}-1.fc43.noarch.rpm) |"
-                ;;
-              x86_64)
-                RPM_TABLE="| **RPM** (Fedora 43) | x86_64 | [${PKG}-${VERSION}-1.fc43.x86_64.rpm](${DL}/rpm/fedora/43/x86_64/${PKG}-${VERSION}-1.fc43.x86_64.rpm) |"
-                ;;
-              x86_64+aarch64)
-                RPM_TABLE="| **RPM** (Fedora 43) | x86_64 | [${PKG}-${VERSION}-1.fc43.x86_64.rpm](${DL}/rpm/fedora/43/x86_64/${PKG}-${VERSION}-1.fc43.x86_64.rpm) |
-          | **RPM** (Fedora 43) | aarch64 | [${PKG}-${VERSION}-1.fc43.aarch64.rpm](${DL}/rpm/fedora/43/aarch64/${PKG}-${VERSION}-1.fc43.aarch64.rpm) |"
-                ;;
-            esac
-          fi
-
-          # Build DEB download table
-          DEB_TABLE=""
-          if [ "${{ inputs.has-deb }}" = "true" ]; then
-            case "${{ inputs.deb-arch }}" in
-              all)
-                DEB_TABLE="| **DEB** (Ubuntu 24.04) | all | [${PKG}_${VERSION}-1_all.deb](${DL}/deb/ubuntu/24.04/all/ubuntu2404.${PKG}_${VERSION}-1_all.deb) |
-          | **DEB** (Debian Trixie) | all | [${PKG}_${VERSION}-1_all.deb](${DL}/deb/debian/trixie/all/debiantrixie.${PKG}_${VERSION}-1_all.deb) |"
-                ;;
-              amd64+arm64)
-                DEB_TABLE="| **DEB** (Ubuntu 24.04) | amd64 | [${PKG}_${VERSION}-1_amd64.deb](${DL}/deb/ubuntu/24.04/amd64/ubuntu2404.${PKG}_${VERSION}-1_amd64.deb) |
-          | **DEB** (Ubuntu 24.04) | arm64 | [${PKG}_${VERSION}-1_arm64.deb](${DL}/deb/ubuntu/24.04/arm64/ubuntu2404.${PKG}_${VERSION}-1_arm64.deb) |
-          | **DEB** (Debian Trixie) | amd64 | [${PKG}_${VERSION}-1_amd64.deb](${DL}/deb/debian/trixie/amd64/debiantrixie.${PKG}_${VERSION}-1_amd64.deb) |
-          | **DEB** (Debian Trixie) | arm64 | [${PKG}_${VERSION}-1_arm64.deb](${DL}/deb/debian/trixie/arm64/debiantrixie.${PKG}_${VERSION}-1_arm64.deb) |"
-                ;;
-            esac
-          fi
+          CHANGELOG="${{ inputs.changelog }}"
+          DESC="${{ inputs.description }}"
 
           NOTES=$(cat <<NOTES_EOF
-          ${{ inputs.description }}
+          ${DESC}
 
+          ${CHANGELOG:+## Changes
+
+          ${CHANGELOG}
+          }
           ## Install
 
-          ### Fedora
-          \`\`\`bash
-          sudo dnf install ${PKG}
-          \`\`\`
+          See [installation instructions](https://www.xiboplayer.org/downloads/) for Fedora, Ubuntu and Debian.
 
-          ### Ubuntu / Debian
           \`\`\`bash
+          # Fedora
+          sudo dnf install ${PKG}
+
+          # Ubuntu / Debian
           sudo apt install ${PKG}
           \`\`\`
-
-          First time? Add the repo: [setup instructions](https://www.xiboplayer.org/downloads/)
-
-          ## Direct downloads
-
-          | Package | Arch | Download |
-          |---------|------|----------|
-          ${RPM_TABLE}
-          ${DEB_TABLE}
           NOTES_EOF
           )
 
