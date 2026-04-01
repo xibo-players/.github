@@ -85,7 +85,7 @@ jobs:
         arch: ${{ fromJSON(inputs.arch-matrix) }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Compute Fedora tag
         id: fedora
@@ -105,10 +105,10 @@ jobs:
         if: inputs.build-command != ''
         run: dnf install -y nodejs
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         if: inputs.build-command != ''
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: inputs.build-command != ''
         with:
           node-version: ${{ inputs.node-version }}
@@ -251,7 +251,7 @@ jobs:
           echo "Built RPMs:"
           ls -lh ${{ inputs.rpm-output-dir }}/*.rpm
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ inputs.package-name }}-rpm-${{ steps.fedora.outputs.tag }}-${{ matrix.arch }}
           path: ${{ inputs.rpm-output-dir }}/*.rpm
@@ -266,7 +266,7 @@ jobs:
 
     steps:
       - name: Download all RPM artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: ${{ inputs.package-name }}-rpm-*
           merge-multiple: true
@@ -361,7 +361,7 @@ jobs:
           # Export public key for repository consumers
           gpg --export --armor "$GPG_KEY_ID" > rpms/RPM-GPG-KEY-${{ inputs.package-name }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ inputs.package-name }}-rpm-signed
           path: rpms/
@@ -379,7 +379,7 @@ jobs:
         run: dnf install -y awscli2
 
       - name: Download signed RPMs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ inputs.package-name }}-rpm-signed
           path: rpms/

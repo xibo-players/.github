@@ -108,7 +108,7 @@ jobs:
           dnf install -y \
             git mkosi systemd-container qemu-img mtools xz awscli2
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Configure dnf for resilience
         run: |
@@ -206,7 +206,7 @@ jobs:
           dnf install -y \
             lorax pykickstart createrepo_c dnf-plugins-core curl xz awscli2
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Configure dnf for resilience
         run: |
@@ -340,7 +340,7 @@ jobs:
       - name: Install dependencies
         run: dnf install -y lorax pykickstart curl awscli2
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Determine version
         id: version
@@ -400,7 +400,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Determine version
         id: version
