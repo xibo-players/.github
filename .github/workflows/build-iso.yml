@@ -208,13 +208,13 @@ jobs:
           mkdir -p /tmp/iso-extra/local-repo
           cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
 
-          mkksiso --skip-mkefiboot \
+          mkksiso \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-workstation.iso \
             ${PACKAGE}-everything_${VERSION}_${ARCH}.iso || \
           (echo "Retrying..." && sleep 10 && \
-           mkksiso --skip-mkefiboot \
+           mkksiso \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-workstation.iso \
@@ -278,7 +278,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
-          mkksiso --skip-mkefiboot \
+          mkksiso \
             --ks "${{ inputs.kickstart-file }}" \
             /tmp/fedora-netinst.iso \
             ${PACKAGE}-netinstall_${VERSION}_x86_64.iso
