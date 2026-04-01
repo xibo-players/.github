@@ -36,8 +36,61 @@ on:
         default: '0.2.0'
 
 jobs:
+  # ── Pre-flight: verify all player packages are in the repo ───────────
+  preflight:
+    name: Verify packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all player packages exist with matching versions
+        run: |
+          # Fetch the RPM package index from dl.xiboplayer.org
+          PKGS=$(curl -sf "https://dl.xiboplayer.org/rpm/packages.json") || {
+            echo "ERROR: Cannot reach dl.xiboplayer.org/rpm/packages.json"
+            exit 1
+          }
+
+          # Required packages (players must all share the same version)
+          PLAYERS="xiboplayer-electron xiboplayer-chromium xiboplayer-kiosk"
+          OTHER="arexibo xiboplayer-release"
+
+          echo "=== Package versions in repo ==="
+          echo "$PKGS" | python3 -c "
+          import sys, json
+          pkgs = json.load(sys.stdin)
+          seen = {}
+          for p in pkgs:
+              if p['name'] not in seen:
+                  seen[p['name']] = p['version']
+                  print(f\"  {p['name']} {p['version']} ({p['arch']})\")
+
+          players = '$PLAYERS'.split()
+          other = '$OTHER'.split()
+          all_required = players + other
+
+          # Check all required packages exist
+          missing = [n for n in all_required if n not in seen]
+          if missing:
+              print(f\"\\nERROR: Missing packages: {', '.join(missing)}\")
+              sys.exit(1)
+
+          # Check player versions match (strip RPM release suffix for comparison)
+          def base_version(v):
+              return v.split('-')[0]  # 0.7.11-1.fc43 → 0.7.11
+
+          player_versions = {n: base_version(seen[n]) for n in players}
+          versions = set(player_versions.values())
+          if len(versions) > 1:
+              print(f\"\\nERROR: Player version mismatch:\")
+              for n, v in player_versions.items():
+                  print(f\"  {n}: {v}\")
+              sys.exit(1)
+
+          print(f\"\\nAll {len(all_required)} packages present, players at version {versions.pop()}\")
+          "
+
   # ── Disk images (raw + QCOW2) via mkosi ──────────────────────────────
   build-disk-images:
+    needs: preflight
     if: inputs.build-disk-images == true
     name: Disk Images (${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
@@ -135,6 +188,7 @@ jobs:
 
   # ── Self-contained ISO (offline install) ─────────────────────────────
   build-self-contained-iso:
+    needs: preflight
     if: inputs.build-self-contained-iso == true
     name: Offline ISO (${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
@@ -274,6 +328,7 @@ jobs:
 
   # ── Netinstall ISO (lightweight, needs network) ──────────────────────
   build-netinstall:
+    needs: preflight
     if: inputs.build-netinstall == true && contains(inputs.architectures, 'x86_64')
     name: Netinstall ISO (x86_64)
     runs-on: ubuntu-latest
