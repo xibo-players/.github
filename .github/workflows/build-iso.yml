@@ -406,3 +406,21 @@ jobs:
           echo "$VERSION" > /tmp/LATEST
           aws s3 cp /tmp/LATEST "$BUCKET/$PACKAGE/LATEST" \
             --endpoint-url "$R2_ENDPOINT"
+
+      - name: Upload assets to GitHub Release (files under 2 GB)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          MAX_SIZE=$((2 * 1024 * 1024 * 1024 - 1))  # 2 GB - 1 byte
+          for file in /tmp/checksums/*; do
+            [ -f "$file" ] || continue
+            SIZE=$(stat -c%s "$file")
+            NAME=$(basename "$file")
+            if [ "$SIZE" -le "$MAX_SIZE" ]; then
+              echo "Uploading $NAME ($((SIZE / 1048576)) MB) to GH Release"
+              gh release upload "$TAG" "$file" --clobber || true
+            else
+              echo "Skipping $NAME ($((SIZE / 1048576)) MB) — exceeds 2 GB GH limit"
+            fi
+          done
