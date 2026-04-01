@@ -169,37 +169,53 @@ jobs:
             https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-43.noarch.rpm \
             https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-43.noarch.rpm
 
-      - name: Download extra packages
+      - name: Download all packages for offline install
         run: |
           mkdir -p /tmp/local-repo
 
+          # Parse ALL packages from kickstart: %packages section + %post dnf commands
           KS_PACKAGES=$(sed -n '/%packages/,/%end/p' "${{ inputs.kickstart-file }}" | \
             grep -v '^%\|^#\|^-\|^@' | tr -s '\n' ' ')
+          # Include @groups from %packages
+          KS_GROUPS=$(sed -n '/%packages/,/%end/p' "${{ inputs.kickstart-file }}" | \
+            grep '^@' | tr -s '\n' ' ')
           POST_PACKAGES=$(grep 'dnf install -y' "${{ inputs.kickstart-file }}" | \
             grep -v 'rpmfusion\|release' | sed 's/.*dnf install -y //' | tr -s '\n' ' ')
 
           ALL_PACKAGES="$KS_PACKAGES $POST_PACKAGES"
-          echo "Downloading: $ALL_PACKAGES"
+          echo "Packages: $ALL_PACKAGES"
+          echo "Groups: $KS_GROUPS"
 
-          dnf download --resolve --alldeps --destdir=/tmp/local-repo $ALL_PACKAGES || true
+          # Download all packages with full dependency resolution
+          dnf download --resolve --alldeps --destdir=/tmp/local-repo \
+            $ALL_PACKAGES $KS_GROUPS || true
+
           createrepo_c /tmp/local-repo
-          echo "Local repo: $(ls /tmp/local-repo/*.rpm 2>/dev/null | wc -l) packages"
+          PKG_COUNT=$(ls /tmp/local-repo/*.rpm 2>/dev/null | wc -l)
+          REPO_SIZE=$(du -sh /tmp/local-repo | cut -f1)
+          echo "Local repo: $PKG_COUNT packages, $REPO_SIZE"
 
       - name: Create offline kickstart
         run: |
           cp "${{ inputs.kickstart-file }}" /tmp/selfcontained.ks
+
+          # Remove network install sources — all packages are local
           sed -i '/^url /d; /^repo /d' /tmp/selfcontained.ks
+
+          # Add local repo embedded on the ISO
           sed -i '/^skipx/a repo --name=local-extras --baseurl=file:///run/install/repo/local-repo/' /tmp/selfcontained.ks
 
-      - name: Download Fedora Workstation Live ISO
+      - name: Download Fedora Everything netinst ISO
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          ISO_NAME="Fedora-Workstation-Live-43-1.6.${ARCH}.iso"
-          curl -L -o /tmp/fedora-workstation.iso \
-            "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Workstation/${ARCH}/iso/${ISO_NAME}"
+          # Use netinst as base (~700 MB) instead of Workstation Live (~2.2 GB)
+          # The netinst has Anaconda installer; our local repo provides all packages
+          ISO_NAME="Fedora-Everything-netinst-${ARCH}-43-1.6.iso"
+          curl -L -o /tmp/fedora-netinst.iso \
+            "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Everything/${ARCH}/iso/${ISO_NAME}"
 
-      - name: Build self-contained ISO
+      - name: Build self-contained offline ISO
         env:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
@@ -211,13 +227,13 @@ jobs:
           mkksiso \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
-            /tmp/fedora-workstation.iso \
+            /tmp/fedora-netinst.iso \
             ${PACKAGE}-everything_${VERSION}_${ARCH}.iso || \
           (echo "Retrying..." && sleep 10 && \
            mkksiso \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
-            /tmp/fedora-workstation.iso \
+            /tmp/fedora-netinst.iso \
             ${PACKAGE}-everything_${VERSION}_${ARCH}.iso)
 
           ls -lah ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
