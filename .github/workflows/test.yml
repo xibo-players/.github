@@ -9,6 +9,15 @@ on:
       test-command:
         type: string
         default: 'pnpm test'
+      lint-command:
+        type: string
+        default: ''
+      typecheck:
+        type: boolean
+        default: false
+      audit:
+        type: boolean
+        default: true
 
 jobs:
   test:
@@ -27,4 +36,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: ${{ inputs.test-command }}
+      - name: Lint
+        if: inputs.lint-command != ''
+        run: ${{ inputs.lint-command }}
+
+      - name: Type check
+        if: inputs.typecheck
+        run: pnpm --filter @xiboplayer/pwa exec tsc --noEmit
+
+      - name: Test
+        run: ${{ inputs.test-command }}
+
+      - name: Security audit
+        if: inputs.audit
+        run: pnpm audit --audit-level=high || true
