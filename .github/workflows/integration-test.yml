@@ -1,0 +1,85 @@
+name: Integration Tests (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '24'
+      cms-url:
+        type: string
+        default: ''
+        description: 'CMS URL. If empty, spins up Docker Compose stack.'
+    secrets:
+      CMS_CLIENT_ID:
+        required: true
+      CMS_CLIENT_SECRET:
+        required: true
+
+jobs:
+  integration:
+    name: CMS integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Start Docker Compose CMS if no external CMS URL provided
+      - name: Start local CMS stack
+        if: inputs.cms-url == ''
+        run: |
+          docker compose -f docker-compose.test.yml up -d
+          echo "Waiting for CMS health..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:18080/api/about > /dev/null 2>&1; then
+              echo "CMS ready after ~$((i * 5))s"
+              break
+            fi
+            sleep 5
+          done
+        timeout-minutes: 5
+
+      - name: Seed test data (Docker CMS only)
+        if: inputs.cms-url == ''
+        run: bash scripts/cms-seed.sh
+        env:
+          CMS_URL: http://localhost:18080
+          CLIENT_ID: ${{ secrets.CMS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CMS_CLIENT_SECRET }}
+
+      - name: Run CMS API integration tests
+        run: pnpm --filter @xiboplayer/cms-testing vitest run
+        env:
+          CMS_URL: ${{ inputs.cms-url || 'http://localhost:18080' }}
+          CLIENT_ID: ${{ secrets.CMS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CMS_CLIENT_SECRET }}
+          TEST_DISPLAY_GROUP: CI Test Displays
+
+      - name: Build PWA for e2e
+        run: pnpm --filter @xiboplayer/pwa run build
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @xiboplayer/cms-testing exec playwright install --with-deps chromium
+
+      - name: Run CMS e2e tests
+        run: pnpm --filter @xiboplayer/cms-testing exec playwright test
+        env:
+          CMS_URL: ${{ inputs.cms-url || 'http://localhost:18080' }}
+          CLIENT_ID: ${{ secrets.CMS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CMS_CLIENT_SECRET }}
+          PLAYER_URL: http://localhost:18765/player/
+          HEADLESS: true
+
+      - name: Teardown Docker CMS
+        if: always() && inputs.cms-url == ''
+        run: docker compose -f docker-compose.test.yml down -v
