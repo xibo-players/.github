@@ -49,9 +49,9 @@ jobs:
             exit 1
           }
 
-          # Required packages (players must all share the same version)
-          PLAYERS="xiboplayer-electron xiboplayer-chromium xiboplayer-kiosk"
-          OTHER="arexibo xiboplayer-release"
+          # Required packages (players must share the same version; kiosk has its own scheme)
+          PLAYERS="xiboplayer-electron xiboplayer-chromium"
+          OTHER="arexibo xiboplayer-release xiboplayer-kiosk"
 
           echo "=== Package versions in repo ==="
           echo "$PKGS" | python3 -c "
