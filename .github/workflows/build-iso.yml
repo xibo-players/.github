@@ -274,8 +274,11 @@ jobs:
           # Remove network install sources — all packages are local
           sed -i '/^url /d; /^repo /d' /tmp/selfcontained.ks
 
-          # Add local repo embedded on the ISO
-          sed -i '/^skipx/a repo --name=local-extras --baseurl=file:///run/install/repo/local-repo/' /tmp/selfcontained.ks
+          # Tell Anaconda to use the installation media as base source
+          sed -i '/^skipx/a cdrom' /tmp/selfcontained.ks
+
+          # Add local repo embedded on the ISO for extra packages
+          sed -i '/^cdrom/a repo --name=local-extras --baseurl=file:///run/install/repo/local-repo/' /tmp/selfcontained.ks
 
       - name: Download Fedora Everything netinst ISO
         env:
