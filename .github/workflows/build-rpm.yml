@@ -25,7 +25,7 @@ on:
         description: 'Directory where RPM files are output'
       node-version:
         type: string
-        default: '22'
+        default: '24'
       default-version:
         type: string
         default: '0.2.0'
