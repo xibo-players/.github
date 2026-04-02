@@ -175,6 +175,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
@@ -182,7 +183,7 @@ jobs:
             [ -f "$file" ] || continue
             NAME=$(basename "$file")
             echo "Uploading $NAME"
-            aws s3 cp "$file" "s3://xiboplayer-images/${PACKAGE}/${VERSION}/${NAME}" \
+            aws s3 cp "$file" "${BUCKET}/${PACKAGE}/${VERSION}/${NAME}" \
               --endpoint-url "$R2_ENDPOINT"
           done
 
@@ -318,6 +319,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
@@ -325,7 +327,7 @@ jobs:
             [ -f "$file" ] || continue
             NAME=$(basename "$file")
             echo "Uploading $NAME"
-            aws s3 cp "$file" "s3://xiboplayer-images/${PACKAGE}/${VERSION}/${NAME}" \
+            aws s3 cp "$file" "${BUCKET}/${PACKAGE}/${VERSION}/${NAME}" \
               --endpoint-url "$R2_ENDPOINT"
           done
 
@@ -382,6 +384,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
@@ -389,7 +392,7 @@ jobs:
             [ -f "$file" ] || continue
             NAME=$(basename "$file")
             echo "Uploading $NAME"
-            aws s3 cp "$file" "s3://xiboplayer-images/${PACKAGE}/${VERSION}/${NAME}" \
+            aws s3 cp "$file" "${BUCKET}/${PACKAGE}/${VERSION}/${NAME}" \
               --endpoint-url "$R2_ENDPOINT"
           done
 
@@ -456,11 +459,12 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           PACKAGE: ${{ inputs.package-name }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           pip install awscli 2>/dev/null || true
-          BUCKET="s3://xiboplayer-images"
+          BUCKET="${R2_BUCKET:-s3://xiboplayer-images}"
           PREFIX="${PACKAGE}/${VERSION}"
 
           # List all files for this version and generate checksums

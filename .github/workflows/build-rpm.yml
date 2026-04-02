@@ -389,9 +389,10 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
-          BUCKET="s3://xiboplayer-images"
+          BUCKET="${R2_BUCKET:-s3://xiboplayer-images}"
           DEST="$BUCKET/packages/$PACKAGE/rpm"
 
           # Clear previous version and upload current
