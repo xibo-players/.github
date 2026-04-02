@@ -260,9 +260,10 @@ jobs:
           KS_GROUPS=$(sed -n '/%packages/,/%end/p' "${{ inputs.kickstart-file }}" | \
             grep '^@' | tr -s '\n' ' ')
           POST_PACKAGES=$(grep 'dnf install -y' "${{ inputs.kickstart-file }}" | \
-            grep -v 'rpmfusion\|release' | sed 's/.*dnf install -y //' | tr -s '\n' ' ')
+            grep -v 'rpmfusion' | sed 's/.*dnf install -y //; s/--nogpgcheck //; s|https://[^ ]*||g' | tr -s '\n' ' ')
 
-          ALL_PACKAGES="$KS_PACKAGES $POST_PACKAGES"
+          # Also download xiboplayer-release so GPG key is available offline
+          ALL_PACKAGES="$KS_PACKAGES $POST_PACKAGES xiboplayer-release"
           echo "Packages: $ALL_PACKAGES"
           echo "Groups: $KS_GROUPS"
 
