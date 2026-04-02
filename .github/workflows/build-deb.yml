@@ -270,7 +270,7 @@ jobs:
         run: |
           pip install awscli 2>/dev/null || sudo pip install awscli
 
-          BUCKET="${R2_BUCKET:-s3://xiboplayer-images}"
+          BUCKET="${R2_BUCKET}"
           DEST="$BUCKET/packages/$PACKAGE/deb"
 
           # Clear previous version and upload current

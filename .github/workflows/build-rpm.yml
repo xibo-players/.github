@@ -392,7 +392,7 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
-          BUCKET="${R2_BUCKET:-s3://xiboplayer-images}"
+          BUCKET="${R2_BUCKET}"
           DEST="$BUCKET/packages/$PACKAGE/rpm"
 
           # Clear previous version and upload current

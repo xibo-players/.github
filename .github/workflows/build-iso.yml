@@ -183,6 +183,7 @@ jobs:
             [ -f "$file" ] || continue
             NAME=$(basename "$file")
             echo "Uploading $NAME"
+            BUCKET="${R2_BUCKET}"
             aws s3 cp "$file" "${BUCKET}/${PACKAGE}/${VERSION}/${NAME}" \
               --endpoint-url "$R2_ENDPOINT"
           done
@@ -327,6 +328,7 @@ jobs:
             [ -f "$file" ] || continue
             NAME=$(basename "$file")
             echo "Uploading $NAME"
+            BUCKET="${R2_BUCKET}"
             aws s3 cp "$file" "${BUCKET}/${PACKAGE}/${VERSION}/${NAME}" \
               --endpoint-url "$R2_ENDPOINT"
           done
@@ -392,6 +394,7 @@ jobs:
             [ -f "$file" ] || continue
             NAME=$(basename "$file")
             echo "Uploading $NAME"
+            BUCKET="${R2_BUCKET}"
             aws s3 cp "$file" "${BUCKET}/${PACKAGE}/${VERSION}/${NAME}" \
               --endpoint-url "$R2_ENDPOINT"
           done
@@ -464,7 +467,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           pip install awscli 2>/dev/null || true
-          BUCKET="${R2_BUCKET:-s3://xiboplayer-images}"
+          BUCKET="${R2_BUCKET}"
           PREFIX="${PACKAGE}/${VERSION}"
 
           # List all files for this version and generate checksums
