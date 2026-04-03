@@ -392,20 +392,53 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
-          BUCKET="${R2_BUCKET}"
           DEST="$BUCKET/packages/$PACKAGE/rpm"
+          BUCKET="${R2_BUCKET}"
+          FEDORA_VERS="43 44"
 
-          # Clear previous version and upload current
-          aws s3 rm "$DEST/" --recursive --endpoint-url "$R2_ENDPOINT" 2>/dev/null || true
-
-          for file in rpms/*; do
+          for file in rpms/*.rpm; do
             NAME=$(basename "$file")
-            echo "Uploading $NAME"
-            aws s3 cp "$file" "$DEST/$NAME" --endpoint-url "$R2_ENDPOINT"
-          done
+            [[ "$NAME" == RPM-GPG-KEY-* ]] && continue
 
-          echo "Uploaded to: $DEST/"
-          aws s3 ls "$DEST/" --endpoint-url "$R2_ENDPOINT"
+            # Parse fc tag and arch from filename
+            # Format: fc43.xiboplayer-electron-0.7.12-1.fc43.x86_64.rpm
+            fc_ver=""
+            clean_name="$NAME"
+            for v in $FEDORA_VERS; do
+              if [[ "$NAME" == "fc${v}."* ]]; then
+                fc_ver="$v"
+                clean_name="${NAME#fc${v}.}"
+                break
+              fi
+            done
+            [ -z "$fc_ver" ] && fc_ver="${FEDORA_VERS%% *}" # default to first
+
+            # Determine arch from filename
+            if [[ "$clean_name" == *.src.rpm ]]; then
+              arch="SRPMS"
+            elif [[ "$clean_name" == *.x86_64.rpm ]]; then
+              arch="x86_64"
+            elif [[ "$clean_name" == *.aarch64.rpm ]]; then
+              arch="aarch64"
+            elif [[ "$clean_name" == *.noarch.rpm ]]; then
+              arch="noarch"
+            else
+              echo "  SKIP unknown arch: $NAME"
+              continue
+            fi
+
+            # Upload to final repo path
+            DEST="$BUCKET/rpm/fedora/$fc_ver/$arch/$clean_name"
+            echo "  $clean_name → rpm/fedora/$fc_ver/$arch/"
+            aws s3 cp "$file" "$DEST" --endpoint-url "$R2_ENDPOINT"
+
+            # noarch RPMs also go to x86_64 and aarch64
+            if [ "$arch" = "noarch" ]; then
+              for extra in x86_64 aarch64; do
+                aws s3 cp "$file" "$BUCKET/rpm/fedora/$fc_ver/$extra/$clean_name" --endpoint-url "$R2_ENDPOINT"
+              done
+            fi
+          done
 
   notify:
     name: Trigger repository update

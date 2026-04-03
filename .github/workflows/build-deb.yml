@@ -271,19 +271,53 @@ jobs:
           pip install awscli 2>/dev/null || sudo pip install awscli
 
           BUCKET="${R2_BUCKET}"
-          DEST="$BUCKET/packages/$PACKAGE/deb"
 
-          # Clear previous version and upload current
-          aws s3 rm "$DEST/" --recursive --endpoint-url "$R2_ENDPOINT" 2>/dev/null || true
+          # DEB distro tags and their repo paths
+          declare -A DISTRO_PATHS=(
+            ["ubuntu2404"]="deb/ubuntu/24.04"
+            ["debiantrixie"]="deb/debian/trixie"
+          )
+          DEFAULT_DISTRO="ubuntu2404"
 
-          for file in debs/*; do
+          for file in debs/*.deb; do
             NAME=$(basename "$file")
-            echo "Uploading $NAME"
-            aws s3 cp "$file" "$DEST/$NAME" --endpoint-url "$R2_ENDPOINT"
-          done
 
-          echo "Uploaded to: $DEST/"
-          aws s3 ls "$DEST/" --endpoint-url "$R2_ENDPOINT"
+            # Parse distro tag from prefix (e.g., ubuntu2404.xiboplayer-electron_0.7.12_amd64.deb)
+            distro_tag=""
+            clean_name="$NAME"
+            for tag in "${!DISTRO_PATHS[@]}"; do
+              if [[ "$NAME" == "${tag}."* ]]; then
+                distro_tag="$tag"
+                clean_name="${NAME#${tag}.}"
+                break
+              fi
+            done
+            [ -z "$distro_tag" ] && distro_tag="$DEFAULT_DISTRO" && clean_name="$NAME"
+
+            # Determine arch from filename
+            if [[ "$clean_name" == *_amd64.deb ]]; then
+              arch="amd64"
+            elif [[ "$clean_name" == *_arm64.deb ]]; then
+              arch="arm64"
+            elif [[ "$clean_name" == *_all.deb ]]; then
+              arch="all"
+            else
+              echo "  SKIP unknown arch: $NAME"
+              continue
+            fi
+
+            REPO_BASE="${DISTRO_PATHS[$distro_tag]}"
+            DEST="$BUCKET/$REPO_BASE/$arch/$clean_name"
+            echo "  $clean_name → $REPO_BASE/$arch/"
+            aws s3 cp "$file" "$DEST" --endpoint-url "$R2_ENDPOINT"
+
+            # 'all' arch DEBs also go to amd64 and arm64
+            if [ "$arch" = "all" ]; then
+              for extra in amd64 arm64; do
+                aws s3 cp "$file" "$BUCKET/$REPO_BASE/$extra/$clean_name" --endpoint-url "$R2_ENDPOINT"
+              done
+            fi
+          done
 
   notify:
     name: Trigger repository update
