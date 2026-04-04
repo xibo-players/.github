@@ -88,9 +88,27 @@ jobs:
           print(f\"\\nAll {len(all_required)} packages present, players at version {versions.pop()}\")
           "
 
+  # ── Version detection (single source of truth) ───────────────────────
+  detect-version:
+    name: Detect version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Determine version from tag or fallback
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version }}" ]]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+
   # ── Disk images (raw + QCOW2) via mkosi ──────────────────────────────
   build-disk-images:
-    needs: preflight
+    needs: [preflight, detect-version]
     if: inputs.build-disk-images == true
     name: Disk Images (${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
@@ -124,16 +142,9 @@ jobs:
           fastestmirror=True
           EOF
 
-      - name: Determine version
+      - name: Use detected version
         id: version
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "version=${{ needs.detect-version.outputs.version }}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare mkosi configuration
         run: |
@@ -196,7 +207,7 @@ jobs:
 
   # ── Self-contained ISO (offline install) ─────────────────────────────
   build-self-contained-iso:
-    needs: preflight
+    needs: [preflight, detect-version]
     if: inputs.build-self-contained-iso == true
     name: Offline ISO (${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
@@ -224,16 +235,9 @@ jobs:
           fastestmirror=True
           EOF
 
-      - name: Determine version
+      - name: Use detected version
         id: version
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "version=${{ needs.detect-version.outputs.version }}" >> "$GITHUB_OUTPUT"
 
       - name: Add custom repositories
         run: |
@@ -342,7 +346,7 @@ jobs:
 
   # ── Netinstall ISO (lightweight, needs network) ──────────────────────
   build-netinstall:
-    needs: preflight
+    needs: [preflight, detect-version]
     if: inputs.build-netinstall == true && contains(inputs.architectures, 'x86_64')
     name: Netinstall ISO (x86_64)
     runs-on: ubuntu-latest
@@ -356,16 +360,9 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Determine version
+      - name: Use detected version
         id: version
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "version=${{ github.event.inputs.version || inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          fi
+        run: echo "version=${{ needs.detect-version.outputs.version }}" >> "$GITHUB_OUTPUT"
 
       - name: Download Fedora Everything netinstall ISO
         run: |
@@ -409,7 +406,7 @@ jobs:
   # ── GitHub Release with download links ───────────────────────────────
   release:
     name: Create GitHub Release
-    needs: [build-disk-images, build-self-contained-iso, build-netinstall]
+    needs: [detect-version, build-disk-images, build-self-contained-iso, build-netinstall]
     if: always() && (needs.build-disk-images.result == 'success' || needs.build-self-contained-iso.result == 'success' || needs.build-netinstall.result == 'success')
     runs-on: ubuntu-latest
     permissions:
@@ -418,16 +415,12 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Determine version
+      - name: Use detected version
         id: version
         run: |
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=v${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
-            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
-          fi
+          VERSION="${{ needs.detect-version.outputs.version }}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         env:
