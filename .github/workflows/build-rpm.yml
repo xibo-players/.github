@@ -392,7 +392,6 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           PACKAGE: ${{ inputs.package-name }}
         run: |
-          DEST="$BUCKET/packages/$PACKAGE/rpm"
           BUCKET="${R2_BUCKET}"
           FEDORA_VERS="43 44"
 
