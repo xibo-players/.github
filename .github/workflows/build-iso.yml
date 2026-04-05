@@ -347,12 +347,16 @@ jobs:
   # ── Netinstall ISO (lightweight, needs network) ──────────────────────
   build-netinstall:
     needs: [preflight, detect-version]
-    if: inputs.build-netinstall == true && contains(inputs.architectures, 'x86_64')
-    name: Netinstall ISO (x86_64)
-    runs-on: ubuntu-latest
+    if: inputs.build-netinstall == true
+    name: Netinstall ISO (${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     container:
       image: fedora:43
       options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(contains(inputs.architectures, 'aarch64') && contains(inputs.architectures, 'x86_64') && '["x86_64","aarch64"]' || contains(inputs.architectures, 'aarch64') && '["aarch64"]' || '["x86_64"]') }}
 
     steps:
       - name: Install dependencies
@@ -365,9 +369,11 @@ jobs:
         run: echo "version=${{ needs.detect-version.outputs.version }}" >> "$GITHUB_OUTPUT"
 
       - name: Download Fedora Everything netinstall ISO
+        env:
+          ARCH: ${{ matrix.arch }}
         run: |
           curl -L -o /tmp/fedora-netinst.iso \
-            "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Everything/x86_64/iso/Fedora-Everything-netinst-x86_64-43-1.6.iso"
+            "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Everything/${ARCH}/iso/Fedora-Everything-netinst-${ARCH}-43-1.6.iso"
 
       - name: Validate kickstart
         run: |
@@ -377,13 +383,14 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
+          ARCH: ${{ matrix.arch }}
         run: |
           mkksiso \
             --ks "${{ inputs.kickstart-file }}" \
             /tmp/fedora-netinst.iso \
-            ${PACKAGE}-netinstall_${VERSION}_x86_64.iso
+            ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
 
-          ls -lah ${PACKAGE}-netinstall_${VERSION}_x86_64.iso
+          ls -lah ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
 
       - name: Upload to R2
         env:
