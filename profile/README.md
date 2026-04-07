@@ -62,7 +62,7 @@ Already have Fedora, Ubuntu or Debian? Add the repo and install.
 **Fedora**
 ```bash
 sudo dnf install https://dl.xiboplayer.org/rpm/fedora/43/noarch/xiboplayer-release-43-7.fc43.noarch.rpm
-sudo dnf install xiboplayer-kiosk xiboplayer-electron
+sudo dnf install xiboplayer-kiosk xiboplayer-chromium
 ```
 
 **Ubuntu / Debian / Raspberry Pi OS**
@@ -71,7 +71,7 @@ curl -fsSL https://dl.xiboplayer.org/deb/DEB-GPG-KEY-xiboplayer | \
   sudo tee /etc/apt/keyrings/xiboplayer.asc > /dev/null
 echo "deb [signed-by=/etc/apt/keyrings/xiboplayer.asc] https://dl.xiboplayer.org/deb/debian/trixie ./" | \
   sudo tee /etc/apt/sources.list.d/xiboplayer.list
-sudo apt update && sudo apt install xiboplayer-kiosk xiboplayer-electron
+sudo apt update && sudo apt install xiboplayer-kiosk xiboplayer-chromium
 ```
 
 **[Full installation guide](https://www.xiboplayer.org/downloads/)**
