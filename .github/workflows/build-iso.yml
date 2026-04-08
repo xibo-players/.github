@@ -36,23 +36,52 @@ on:
         default: '0.2.0'
 
 jobs:
-  # ── Pre-flight: verify all player packages are in the repo ───────────
+  # ── Pre-flight: wait for current package version to appear in the repo
+  # then verify all required packages are present. The RPM/DEB build
+  # workflows run in parallel — this step polls until our version lands.
   preflight:
     name: Verify packages
     runs-on: ubuntu-latest
+    needs: [detect-version]
     steps:
-      - name: Check all player packages exist with matching versions
+      - name: Wait for ${{ inputs.package-name }} ${{ needs.detect-version.outputs.version }} in repo
         run: |
-          # Fetch the RPM package index from dl.xiboplayer.org
-          PKGS=$(curl -sf "https://dl.xiboplayer.org/rpm/packages.json") || {
-            echo "ERROR: Cannot reach dl.xiboplayer.org/rpm/packages.json"
-            exit 1
-          }
-
-          # Required packages (players must share the same version; kiosk has its own scheme)
+          PACKAGE="${{ inputs.package-name }}"
+          EXPECTED="${{ needs.detect-version.outputs.version }}"
           PLAYERS="xiboplayer-electron xiboplayer-chromium"
           OTHER="arexibo xiboplayer-release xiboplayer-kiosk"
 
+          # Wait up to 20 min for the repo to update (RPM + update-repos + propagation)
+          for attempt in $(seq 1 80); do
+            PKGS=$(curl -sf "https://dl.xiboplayer.org/rpm/packages.json" 2>/dev/null) || {
+              echo "[$attempt] Cannot reach packages.json, retry in 15s..."
+              sleep 15
+              continue
+            }
+
+            CUR=$(echo "$PKGS" | python3 -c "
+          import sys, json
+          pkgs = json.load(sys.stdin)
+          for p in pkgs:
+              if p['name'] == '$PACKAGE':
+                  print(p['version'].split('-')[0])
+                  break
+          ")
+
+            if [ "$CUR" = "$EXPECTED" ]; then
+              echo "[$attempt] $PACKAGE $EXPECTED is in the repo"
+              break
+            fi
+            echo "[$attempt] $PACKAGE in repo: '$CUR', expected: '$EXPECTED' — retry in 15s"
+            sleep 15
+          done
+
+          if [ "$CUR" != "$EXPECTED" ]; then
+            echo "ERROR: $PACKAGE $EXPECTED did not appear in repo after 20 minutes"
+            exit 1
+          fi
+
+          echo ""
           echo "=== Package versions in repo ==="
           echo "$PKGS" | python3 -c "
           import sys, json
@@ -67,15 +96,13 @@ jobs:
           other = '$OTHER'.split()
           all_required = players + other
 
-          # Check all required packages exist
           missing = [n for n in all_required if n not in seen]
           if missing:
               print(f\"\\nERROR: Missing packages: {', '.join(missing)}\")
               sys.exit(1)
 
-          # Check player versions match (strip RPM release suffix for comparison)
           def base_version(v):
-              return v.split('-')[0]  # 0.7.11-1.fc43 → 0.7.11
+              return v.split('-')[0]
 
           player_versions = {n: base_version(seen[n]) for n in players}
           versions = set(player_versions.values())
