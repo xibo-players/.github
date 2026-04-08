@@ -1,0 +1,190 @@
+name: Cleanup old releases (reusable)
+
+# Deletes old GitHub Releases and their matching R2 image directories.
+# Keeps the latest N versioned releases (e.g. v0.4.17, v0.4.18, v0.4.19)
+# and the latest M dated releases (e.g. atomic-20260405, atomic-20260406).
+#
+# Called from per-repo cleanup.yml workflows with retention counts.
+#
+# Usage:
+#   jobs:
+#     cleanup:
+#       uses: xibo-players/.github/.github/workflows/cleanup-releases.yml@main
+#       with:
+#         keep-versioned: 3
+#         keep-dated: 7
+#         r2-prefix: xiboplayer-kiosk
+#         r2-atomic-prefix: xiboplayer-kiosk-atomic
+#       secrets: inherit
+
+on:
+  workflow_call:
+    inputs:
+      keep-versioned:
+        type: number
+        default: 3
+        description: 'How many v* releases to keep (newest first)'
+      keep-dated:
+        type: number
+        default: 7
+        description: 'How many dated releases (atomic-YYYYMMDD) to keep'
+      r2-prefix:
+        type: string
+        default: ''
+        description: 'R2 path prefix for versioned images (e.g. xiboplayer-kiosk). Empty to skip R2 cleanup.'
+      r2-atomic-prefix:
+        type: string
+        default: ''
+        description: 'R2 path prefix for dated atomic images (e.g. xiboplayer-kiosk-atomic). Empty to skip.'
+      dry-run:
+        type: boolean
+        default: false
+        description: 'Preview deletions without executing'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: Cleanup releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install awscli
+        if: inputs.r2-prefix != '' || inputs.r2-atomic-prefix != ''
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y awscli jq
+
+      - name: Clean versioned GitHub Releases (v*)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ inputs.keep-versioned }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          echo "=== Versioned releases (v*) — keeping latest $KEEP ==="
+          # List all v* releases sorted by version (newest first)
+          ALL=$(gh release list --repo "${{ github.repository }}" --limit 100 \
+            --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort_by(.createdAt) | reverse | .[].tagName')
+
+          TOTAL=$(echo "$ALL" | grep -c . || echo 0)
+          echo "Found $TOTAL versioned releases"
+
+          # Delete all but the first $KEEP
+          TO_DELETE=$(echo "$ALL" | tail -n +$((KEEP + 1)))
+          if [ -z "$TO_DELETE" ]; then
+            echo "Nothing to delete (total $TOTAL <= $KEEP)"
+          else
+            echo "$TO_DELETE" | while read tag; do
+              [ -z "$tag" ] && continue
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "[DRY-RUN] Would delete release $tag"
+              else
+                echo "Deleting release $tag"
+                gh release delete "$tag" --yes --cleanup-tag --repo "${{ github.repository }}" 2>&1 || true
+              fi
+            done
+          fi
+
+      - name: Clean dated GitHub Releases (atomic-*)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ inputs.keep-dated }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          echo "=== Dated releases (atomic-*) — keeping latest $KEEP ==="
+          ALL=$(gh release list --repo "${{ github.repository }}" --limit 100 \
+            --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | test("^atomic-[0-9]+$"))] | sort_by(.createdAt) | reverse | .[].tagName')
+
+          TOTAL=$(echo "$ALL" | grep -c . || echo 0)
+          echo "Found $TOTAL dated releases"
+
+          TO_DELETE=$(echo "$ALL" | tail -n +$((KEEP + 1)))
+          if [ -z "$TO_DELETE" ]; then
+            echo "Nothing to delete (total $TOTAL <= $KEEP)"
+          else
+            echo "$TO_DELETE" | while read tag; do
+              [ -z "$tag" ] && continue
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "[DRY-RUN] Would delete release $tag"
+              else
+                echo "Deleting release $tag"
+                gh release delete "$tag" --yes --cleanup-tag --repo "${{ github.repository }}" 2>&1 || true
+              fi
+            done
+          fi
+
+      - name: Clean R2 versioned image directories
+        if: inputs.r2-prefix != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          PREFIX: ${{ inputs.r2-prefix }}
+          KEEP: ${{ inputs.keep-versioned }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          echo "=== R2 $PREFIX/ — keeping latest $KEEP versioned directories ==="
+          # List all "directories" (common prefixes) under the prefix
+          ALL=$(aws s3 ls "${R2_BUCKET}/${PREFIX}/" --endpoint-url "$R2_ENDPOINT" \
+            | awk '/PRE/ {print $2}' | tr -d '/' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -Vr)
+
+          TOTAL=$(echo "$ALL" | grep -c . || echo 0)
+          echo "Found $TOTAL versioned directories:"
+          echo "$ALL" | head -20
+
+          TO_DELETE=$(echo "$ALL" | tail -n +$((KEEP + 1)))
+          if [ -z "$TO_DELETE" ]; then
+            echo "Nothing to delete"
+          else
+            echo "$TO_DELETE" | while read ver; do
+              [ -z "$ver" ] && continue
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "[DRY-RUN] Would delete ${R2_BUCKET}/${PREFIX}/${ver}/"
+              else
+                echo "Deleting ${R2_BUCKET}/${PREFIX}/${ver}/"
+                aws s3 rm "${R2_BUCKET}/${PREFIX}/${ver}/" \
+                  --endpoint-url "$R2_ENDPOINT" --recursive 2>&1 || true
+              fi
+            done
+          fi
+
+      - name: Clean R2 dated atomic image directories
+        if: inputs.r2-atomic-prefix != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          PREFIX: ${{ inputs.r2-atomic-prefix }}
+          KEEP: ${{ inputs.keep-dated }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          echo "=== R2 $PREFIX/ — keeping latest $KEEP dated directories ==="
+          ALL=$(aws s3 ls "${R2_BUCKET}/${PREFIX}/" --endpoint-url "$R2_ENDPOINT" \
+            | awk '/PRE/ {print $2}' | tr -d '/' \
+            | grep -E '^atomic-[0-9]+$' \
+            | sort -r)
+
+          TOTAL=$(echo "$ALL" | grep -c . || echo 0)
+          echo "Found $TOTAL dated directories"
+
+          TO_DELETE=$(echo "$ALL" | tail -n +$((KEEP + 1)))
+          if [ -z "$TO_DELETE" ]; then
+            echo "Nothing to delete"
+          else
+            echo "$TO_DELETE" | while read tag; do
+              [ -z "$tag" ] && continue
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "[DRY-RUN] Would delete ${R2_BUCKET}/${PREFIX}/${tag}/"
+              else
+                echo "Deleting ${R2_BUCKET}/${PREFIX}/${tag}/"
+                aws s3 rm "${R2_BUCKET}/${PREFIX}/${tag}/" \
+                  --endpoint-url "$R2_ENDPOINT" --recursive 2>&1 || true
+              fi
+            done
+          fi
