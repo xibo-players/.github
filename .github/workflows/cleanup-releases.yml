@@ -188,3 +188,46 @@ jobs:
               fi
             done
           fi
+
+      - name: Abort stale multipart uploads (>1 day old)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          echo "=== Aborting stale multipart uploads (>24h old) ==="
+          BUCKET_NAME=$(echo "${R2_BUCKET}" | sed 's|^s3://||')
+          CUTOFF=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%S)
+
+          # List in-progress multipart uploads
+          UPLOADS=$(aws s3api list-multipart-uploads \
+            --bucket "$BUCKET_NAME" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --query "Uploads[?Initiated<'$CUTOFF'].[Key,UploadId,Initiated]" \
+            --output text 2>/dev/null) || {
+              echo "No multipart uploads to clean (or list failed)"
+              exit 0
+            }
+
+          if [ -z "$UPLOADS" ]; then
+            echo "No stale multipart uploads found"
+            exit 0
+          fi
+
+          COUNT=$(echo "$UPLOADS" | wc -l)
+          echo "Found $COUNT stale multipart upload(s)"
+          echo "$UPLOADS" | while read -r key upload_id initiated; do
+            [ -z "$key" ] && continue
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[DRY-RUN] Would abort: $key (started $initiated)"
+            else
+              echo "Aborting: $key (started $initiated)"
+              aws s3api abort-multipart-upload \
+                --bucket "$BUCKET_NAME" \
+                --key "$key" \
+                --upload-id "$upload_id" \
+                --endpoint-url "$R2_ENDPOINT" 2>&1 || echo "  failed"
+            fi
+          done
