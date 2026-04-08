@@ -125,42 +125,54 @@ jobs:
       - name: Determine version and release
         id: version
         run: |
-          # Parse version from spec file (single source of truth)
-          parse_spec_version() {
-            local spec="${{ inputs.rpm-spec }}"
-            if [[ -n "$spec" && -f "$spec" ]]; then
-              local ver rel
-              ver=$(grep -m1 '^Version:' "$spec" | awk '{print $2}')
-              rel=$(grep -m1 '^Release:' "$spec" | awk '{print $2}' | sed 's/%{?dist}//')
-              # Reject macro placeholders like %{_version}
-              if [[ -n "$ver" && "$ver" != *"%"* ]]; then
-                echo "version=${ver}" >> "$GITHUB_OUTPUT"
-                echo "release=${rel:-1}" >> "$GITHUB_OUTPUT"
-                echo "Parsed from spec: version=${ver}, release=${rel:-1}"
-                return 0
-              fi
-            fi
-            return 1
-          }
+          # Strict priority — never fall back to a default. Fail loudly if no source.
+          # Priority: git tag > RPM spec > package.json
+          VERSION=""
+          RELEASE=""
 
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
             TAG="${TAG#v}"
-            # Support tags like v0.3.1-2 → version=0.3.1, release=2
             if [[ "$TAG" == *-* ]]; then
-              echo "version=${TAG%%-*}" >> "$GITHUB_OUTPUT"
-              echo "release=${TAG#*-}" >> "$GITHUB_OUTPUT"
+              VERSION="${TAG%%-*}"
+              RELEASE="${TAG#*-}"
             else
-              echo "version=${TAG}" >> "$GITHUB_OUTPUT"
-              echo "release=1" >> "$GITHUB_OUTPUT"
+              VERSION="$TAG"
+              RELEASE="1"
             fi
-          elif parse_spec_version; then
-            echo "Using version from spec file"
+            echo "Read from git tag: $VERSION-$RELEASE"
           else
-            echo "version=${{ inputs.default-version }}" >> "$GITHUB_OUTPUT"
-            SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-8)
-            echo "release=0.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            SPEC="${{ inputs.rpm-spec }}"
+            if [ -n "$SPEC" ] && [ -f "$SPEC" ]; then
+              SPEC_VER=$(grep -m1 '^Version:' "$SPEC" | awk '{print $2}')
+              # Skip macros like %{_version}
+              if [ -n "$SPEC_VER" ] && [[ "$SPEC_VER" != *"%"* ]]; then
+                VERSION="$SPEC_VER"
+                RELEASE=$(grep -m1 '^Release:' "$SPEC" | awk '{print $2}' | sed 's/%.*//')
+                [ -z "$RELEASE" ] && RELEASE="1"
+                echo "Read from RPM spec: $VERSION-$RELEASE"
+              fi
+            fi
+
+            # Fallback to package.json (for Node projects with macro spec)
+            if [ -z "$VERSION" ] && [ -f "package.json" ]; then
+              VERSION=$(jq -r '.version' package.json 2>/dev/null)
+              [ "$VERSION" = "null" ] && VERSION=""
+              if [ -n "$VERSION" ]; then
+                RELEASE="1"
+                echo "Read from package.json: $VERSION"
+              fi
+            fi
           fi
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::Cannot determine version. Need a git tag, an RPM spec with literal Version:, or a package.json."
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "Final version: $VERSION-$RELEASE"
 
       - name: Fetch shared packaging library
         run: |

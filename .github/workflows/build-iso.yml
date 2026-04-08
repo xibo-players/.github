@@ -123,27 +123,39 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Determine version (workflow input > tag > RPM spec)
+      - name: Determine version (tag > RPM spec > package.json)
         id: version
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version }}" ]]; then
-            VERSION="${{ github.event.inputs.version }}"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+          # Strict — never fall back to a default. Fail loudly if no source.
+          VERSION=""
+
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
+            # Strip release suffix if present (v0.4.19-2 → 0.4.19)
+            VERSION="${VERSION%%-*}"
+            echo "Read from git tag: $VERSION"
           else
-            # Single source of truth: read Version: from the RPM spec file.
             SPEC=$(find rpm -name '*.spec' -type f 2>/dev/null | head -1)
-            if [ -z "$SPEC" ] || [ ! -f "$SPEC" ]; then
-              echo "ERROR: No RPM spec file found in rpm/ — cannot determine version"
-              exit 1
+            if [ -n "$SPEC" ] && [ -f "$SPEC" ]; then
+              SPEC_VER=$(grep -oP '^Version:\s*\K\S+' "$SPEC")
+              if [ -n "$SPEC_VER" ] && [[ "$SPEC_VER" != *"%"* ]]; then
+                VERSION="$SPEC_VER"
+                echo "Read from RPM spec ($SPEC): $VERSION"
+              fi
             fi
-            VERSION=$(grep -oP '^Version:\s*\K\S+' "$SPEC")
-            if [ -z "$VERSION" ]; then
-              echo "ERROR: No Version: field in $SPEC"
-              exit 1
+
+            if [ -z "$VERSION" ] && [ -f "package.json" ]; then
+              VERSION=$(jq -r '.version' package.json 2>/dev/null)
+              [ "$VERSION" = "null" ] && VERSION=""
+              [ -n "$VERSION" ] && echo "Read from package.json: $VERSION"
             fi
-            echo "Read version $VERSION from $SPEC"
           fi
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::Cannot determine version. Need a git tag, an RPM spec with literal Version:, or a package.json."
+            exit 1
+          fi
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   # ── Disk images (raw + QCOW2) via mkosi ──────────────────────────────

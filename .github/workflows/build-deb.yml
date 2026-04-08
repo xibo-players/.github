@@ -123,12 +123,12 @@ jobs:
       - name: Determine version and release
         id: version
         run: |
-          # Priority: workflow input > git tag > RPM spec > package.json > build script
+          # Strict priority — never fall back to a default. Fail loudly if no source.
+          # Priority: git tag > RPM spec > package.json
+          VERSION=""
+          RELEASE=""
 
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version }}" ]]; then
-            VERSION="${{ github.event.inputs.version }}"
-            RELEASE="1"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
             TAG="${TAG#v}"
             # Support tags like v0.3.1-2 → version=0.3.1, release=2
@@ -139,27 +139,36 @@ jobs:
               VERSION="$TAG"
               RELEASE="1"
             fi
+            echo "Read from git tag: $VERSION-$RELEASE"
           else
-            # Single source of truth: read from RPM spec or package.json
-            VERSION=""
+            # Try RPM spec (single source of truth for kiosk/arexibo/release)
             SPEC=$(find rpm -name '*.spec' -type f 2>/dev/null | head -1)
             if [ -n "$SPEC" ] && [ -f "$SPEC" ]; then
-              VERSION=$(grep -oP '^Version:\s*\K\S+' "$SPEC")
-              RELEASE_RAW=$(grep -oP '^Release:\s*\K\S+' "$SPEC" 2>/dev/null)
-              # Strip %{?dist} and similar from release
-              RELEASE=$(echo "$RELEASE_RAW" | sed 's/%.*//')
-              [ -z "$RELEASE" ] && RELEASE="1"
-              echo "Read from RPM spec: $VERSION-$RELEASE"
-            elif [ -f "package.json" ]; then
-              VERSION=$(jq -r '.version' package.json 2>/dev/null)
-              RELEASE="1"
-              echo "Read from package.json: $VERSION"
+              SPEC_VER=$(grep -oP '^Version:\s*\K\S+' "$SPEC")
+              # Skip macros like %{_version}
+              if [ -n "$SPEC_VER" ] && [[ "$SPEC_VER" != *"%"* ]]; then
+                VERSION="$SPEC_VER"
+                RELEASE_RAW=$(grep -oP '^Release:\s*\K\S+' "$SPEC" 2>/dev/null)
+                RELEASE=$(echo "$RELEASE_RAW" | sed 's/%.*//')
+                [ -z "$RELEASE" ] && RELEASE="1"
+                echo "Read from RPM spec: $VERSION-$RELEASE"
+              fi
             fi
 
-            if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
-              echo "ERROR: Could not determine version (no spec, no package.json, no tag)"
-              exit 1
+            # Fallback to package.json (for Node projects without literal RPM spec)
+            if [ -z "$VERSION" ] && [ -f "package.json" ]; then
+              VERSION=$(jq -r '.version' package.json 2>/dev/null)
+              [ "$VERSION" = "null" ] && VERSION=""
+              if [ -n "$VERSION" ]; then
+                RELEASE="1"
+                echo "Read from package.json: $VERSION"
+              fi
             fi
+          fi
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::Cannot determine version. Need a git tag, an RPM spec with literal Version:, or a package.json."
+            exit 1
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
