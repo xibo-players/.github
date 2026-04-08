@@ -141,8 +141,16 @@ jobs:
             fi
             echo "Read from git tag: $VERSION-$RELEASE"
           else
-            # Try RPM spec (single source of truth for kiosk/arexibo/release)
-            SPEC=$(find rpm -name '*.spec' -type f 2>/dev/null | head -1)
+            # Try RPM spec — look in common locations for packages that
+            # keep their spec at the repo root (xiboplayer-chromium) or
+            # in an rpm/ subdirectory (xiboplayer-electron, kiosk, arexibo).
+            SPEC=""
+            for candidate in rpm/*.spec ./*.spec; do
+              if [ -f "$candidate" ]; then
+                SPEC="$candidate"
+                break
+              fi
+            done
             if [ -n "$SPEC" ] && [ -f "$SPEC" ]; then
               SPEC_VER=$(grep -oP '^Version:\s*\K\S+' "$SPEC")
               # Skip macros like %{_version}
@@ -151,14 +159,15 @@ jobs:
                 RELEASE_RAW=$(grep -oP '^Release:\s*\K\S+' "$SPEC" 2>/dev/null)
                 RELEASE=$(echo "$RELEASE_RAW" | sed 's/%.*//')
                 [ -z "$RELEASE" ] && RELEASE="1"
-                echo "Read from RPM spec: $VERSION-$RELEASE"
+                echo "Read from RPM spec ($SPEC): $VERSION-$RELEASE"
               fi
             fi
 
-            # Fallback to package.json (for Node projects without literal RPM spec)
+            # Fallback to package.json (for Node projects without literal RPM spec).
+            # Parse with grep/sed — jq is not installed in the DEB build containers
+            # and installing it just for version parsing adds an unnecessary dep.
             if [ -z "$VERSION" ] && [ -f "package.json" ]; then
-              VERSION=$(jq -r '.version' package.json 2>/dev/null)
-              [ "$VERSION" = "null" ] && VERSION=""
+              VERSION=$(grep -oP '"version"\s*:\s*"\K[^"]+' package.json 2>/dev/null | head -1)
               if [ -n "$VERSION" ]; then
                 RELEASE="1"
                 echo "Read from package.json: $VERSION"
