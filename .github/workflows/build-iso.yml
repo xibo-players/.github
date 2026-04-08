@@ -95,16 +95,29 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Determine version from tag or fallback
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Determine version (workflow input > tag > RPM spec)
         id: version
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version }}" ]]; then
-            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+            VERSION="${{ github.event.inputs.version }}"
           elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            VERSION="${GITHUB_REF_NAME#v}"
           else
-            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+            # Single source of truth: read Version: from the RPM spec file.
+            SPEC=$(find rpm -name '*.spec' -type f 2>/dev/null | head -1)
+            if [ -z "$SPEC" ] || [ ! -f "$SPEC" ]; then
+              echo "ERROR: No RPM spec file found in rpm/ — cannot determine version"
+              exit 1
+            fi
+            VERSION=$(grep -oP '^Version:\s*\K\S+' "$SPEC")
+            if [ -z "$VERSION" ]; then
+              echo "ERROR: No Version: field in $SPEC"
+              exit 1
+            fi
+            echo "Read version $VERSION from $SPEC"
           fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   # ── Disk images (raw + QCOW2) via mkosi ──────────────────────────────
   build-disk-images:
