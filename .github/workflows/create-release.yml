@@ -1,5 +1,26 @@
 name: Create GitHub Release (reusable)
 
+# Creates (or updates) a GitHub Release for the current tag push.
+#
+# By default the release notes embed a Fedora/Ubuntu dnf/apt install
+# snippet for system packages (RPMs/DEBs). For npm-published packages
+# (e.g. the xiboplayer SDK) pass an `install-snippet` input to replace
+# the default with the right install command(s).
+#
+# Inputs:
+#   package-name      required. Human-readable package name used in the
+#                     release title (e.g. "xiboplayer-chromium").
+#   description       optional. Short paragraph shown at the top of the
+#                     release notes.
+#   changelog         optional. Markdown block shown under a "## Changes"
+#                     heading if non-empty.
+#   install-snippet   optional. Multi-line string that replaces the
+#                     default dnf/apt install block. Pass the raw
+#                     fenced-code bash snippet, no "## Install" heading
+#                     — the workflow wraps it.
+#   install-url       optional. URL shown above the install block
+#                     (default: https://www.xiboplayer.org/downloads/).
+
 on:
   workflow_call:
     inputs:
@@ -12,6 +33,14 @@ on:
       changelog:
         type: string
         default: ''
+      install-snippet:
+        type: string
+        default: ''
+        description: 'Custom install command block (empty = dnf/apt default)'
+      install-url:
+        type: string
+        default: 'https://www.xiboplayer.org/downloads/'
+        description: 'Link shown above the install block'
 
 jobs:
   release:
@@ -29,10 +58,27 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
           PKG: ${{ inputs.package-name }}
+          DESC: ${{ inputs.description }}
+          CHANGELOG: ${{ inputs.changelog }}
+          INSTALL_SNIPPET: ${{ inputs.install-snippet }}
+          INSTALL_URL: ${{ inputs.install-url }}
         run: |
-          VERSION="${TAG#v}"
-          CHANGELOG="${{ inputs.changelog }}"
-          DESC="${{ inputs.description }}"
+          set -euo pipefail
+
+          # Default install snippet (dnf/apt) for system packages. Used
+          # when the caller did not override install-snippet.
+          if [ -z "$INSTALL_SNIPPET" ]; then
+            INSTALL_SNIPPET=$(cat <<SNIPPET_EOF
+          \`\`\`bash
+          # Fedora
+          sudo dnf install ${PKG}
+
+          # Ubuntu / Debian
+          sudo apt install ${PKG}
+          \`\`\`
+          SNIPPET_EOF
+          )
+          fi
 
           NOTES=$(cat <<NOTES_EOF
           ${DESC}
@@ -43,15 +89,9 @@ jobs:
           }
           ## Install
 
-          See [installation instructions](https://www.xiboplayer.org/downloads/) for Fedora, Ubuntu and Debian.
+          See [installation instructions](${INSTALL_URL}).
 
-          \`\`\`bash
-          # Fedora
-          sudo dnf install ${PKG}
-
-          # Ubuntu / Debian
-          sudo apt install ${PKG}
-          \`\`\`
+          ${INSTALL_SNIPPET}
           NOTES_EOF
           )
 
