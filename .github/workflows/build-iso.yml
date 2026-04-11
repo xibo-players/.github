@@ -577,6 +577,38 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+      # Test builds ALSO upload to an R2 test prefix for fast download.
+      # The GH Actions artifact download API is throttled hard (~1 MB/s),
+      # which makes a 1.1 GB ISO take 15-20 minutes to fetch. The same
+      # file on R2 behind Cloudflare's CDN downloads at 50-200 MB/s.
+      # Path: <bucket>/<package>/test/<short-sha>/<iso-name>
+      # URL:  https://images.xiboplayer.org/<package>/test/<short-sha>/<iso-name>
+      - name: Upload to R2 test prefix (fast download alternative)
+        if: inputs.upload-as-artifact == true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE: ${{ inputs.package-name }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          SHORT_SHA="${GITHUB_SHA:0:12}"
+          BUCKET="${R2_BUCKET}"
+          for file in *.iso; do
+            [ -f "$file" ] || continue
+            NAME=$(basename "$file")
+            DEST="${BUCKET}/${PACKAGE}/test/${SHORT_SHA}/${NAME}"
+            echo "Uploading $NAME → $DEST"
+            aws s3 cp "$file" "$DEST" --endpoint-url "$R2_ENDPOINT"
+            # Print a clickable CDN URL into the job annotations so the
+            # operator can grab it directly from the GH Actions run page.
+            URL="https://images.xiboplayer.org/${PACKAGE}/test/${SHORT_SHA}/${NAME}"
+            echo "::notice title=Test ISO ready::$URL"
+            echo "$URL"
+          done
+
   # ── GitHub Release with download links ───────────────────────────────
   release:
     name: Create GitHub Release
