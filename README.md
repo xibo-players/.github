@@ -362,9 +362,16 @@ jobs:
 
 ### 5. Build ISO (`build-iso.yml`)
 
-Builds bootable kiosk images for Xibo players using modern mkosi tool. Supports installer ISOs, VM images (QCOW2), and raw disk images for both x86_64 and aarch64.
+Builds bootable kiosk images for Xibo players. Three build paths run in parallel, each independently opt-in:
 
-**Usage:**
+- **Disk images** — raw + QCOW2 disk images built with `mkosi` (pre-installed, boot directly)
+- **Self-contained ISO** — offline-install Everything ISO with all packages bundled, built by remastering Fedora's netinstall ISO with `mkksiso`
+- **Netinstall ISO** — lightweight installer that pulls packages from the network at install time, also via `mkksiso`
+
+A single job controls the whole pipeline: preflight (waits for the current RPM version to land in the repo), then the three build jobs, then a release job that publishes checksums, creates/updates the GH release, and uploads assets.
+
+**Production usage** (tag-triggered, uploads to R2, creates release):
+
 ```yaml
 name: Build Kiosk Images
 
@@ -373,80 +380,177 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build-images:
-    uses: xibo-players/.github/.github/workflows/build-iso.yml@main
+  build:
+    uses: xibo-players/.github/.github/workflows/build-iso.yml@<pinned-sha>
     with:
-      package-name: 'xiboplayer-electron'
-      kickstart-file: 'kickstart/xibo-kiosk.ks'
-      mkosi-config: 'mkosi.conf'
-      build-installer: true
+      package-name: xiboplayer-kiosk
+      kickstart-file: 'kickstart/xiboplayer-kiosk.ks'
       build-disk-images: true
+      build-self-contained-iso: true
+      build-netinstall: true
       architectures: 'x86_64,aarch64'
-      default-version: '0.2.0'
+    secrets: inherit
 ```
 
-**Inputs:**
-- `package-name` (required): Package name for the kiosk image
-- `kickstart-file`: Path to Kickstart file (default: `kickstart/xibo-kiosk.ks`)
-- `mkosi-config`: Path to mkosi config (default: `mkosi.conf`)
-- `build-installer`: Build installer ISO (default: `true`)
-- `build-disk-images`: Build disk images (default: `true`)
-- `architectures`: Architectures to build (default: `x86_64`)
-- `default-version`: Default version (default: `0.2.0`)
-- `release-body`: Custom release body markdown (optional)
+**Required inputs:**
 
-**Features:**
-- **Installer ISO**: Kickstart-based automated Fedora installation
-- **Disk Images**:
-  - QCOW2 for VMs (x86_64)
-  - Compressed raw images for physical hardware (x86_64, aarch64)
-- Uses modern **mkosi** tool (not legacy genisoimage)
-- GNOME Kiosk for locked-down display mode
-- Auto-login and kiosk session startup
-- Published to gh-pages with installation instructions
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `package-name` | string | — | Package name (e.g. `xiboplayer-kiosk`). Used for image file names and repo checks. |
 
-**What You Need to Provide:**
+**Build-path selectors** (at least one must be `true`):
 
-1. **Kickstart File** (`kickstart/xibo-kiosk.ks`):
-   - Use the template at `scripts/mkosi/kickstart/xibo-kiosk.ks.template`
-   - Customize package installation and configuration
-   - Add your player's repository and packages
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `build-disk-images` | bool | `true` | Build raw + QCOW2 via mkosi |
+| `build-self-contained-iso` | bool | `false` | Build offline Everything ISO via mkksiso |
+| `build-netinstall` | bool | `false` | Build lightweight netinstall ISO via mkksiso |
 
-2. **mkosi Configuration** (`mkosi.conf`) (optional):
-   - Use the template at `scripts/mkosi/mkosi.conf.template`
-   - Customize packages and system configuration
-   - Or let the workflow use the default template
+**Source files:**
 
-3. **mkosi-extra directory** (optional):
-   - Additional files to include in the image
-   - Scripts, configurations, etc.
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `kickstart-file` | string | `kickstart/xibo-kiosk.ks` | Path to Kickstart file consumed by mkksiso |
+| `mkosi-config` | string | `mkosi.conf` | Path to mkosi config consumed by the disk-images job |
+| `architectures` | string | `x86_64` | Comma-separated architecture list: `x86_64`, `aarch64`, or both |
+| `default-version` | string | `0.2.0` | Fallback version. Unused in normal flows (version is read from tag → RPM spec → `package.json`). |
 
-**Image Types Produced:**
+**Customization inputs** — pass through to `mkksiso` to override volume label, kernel cmdline, or grub.cfg text:
 
-| Type | Filename Pattern | Use Case |
-|------|------------------|----------|
-| Installer ISO | `*-kiosk-installer_*_x86_64.iso` | Boot and auto-install to hardware |
-| QCOW2 | `*-kiosk_*_x86_64.qcow2` | GNOME Boxes, virt-manager, QEMU |
-| Raw (compressed) | `*-kiosk_*_x86_64.raw.xz` | Flash to USB/SD for hardware |
-| Raw ARM | `*-kiosk_*_aarch64.raw.xz` | ARM devices (Raspberry Pi, etc.) |
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `iso-volid` | string | `''` | Override the ISO volume ID (`mkksiso -V`). When set, remember to also rewrite the embedded grub.cfg label references via `iso-grub-replacements`. |
+| `iso-cmdline-append` | string | `''` | Append to the installer kernel cmdline (`mkksiso -c`). Space-separated args. |
+| `iso-cmdline-remove` | string | `''` | Remove args from the installer kernel cmdline (`mkksiso -r`). Space-separated, e.g. `'quiet rhgb splash'`. |
+| `iso-grub-replacements` | string | `''` | Multiline text replacements for grub.cfg (`mkksiso -R`). One pair per line, pipe-separated: `FROM\|TO`. Applied with `sed -i` behavior to every menu entry. |
 
-**Published Images:**
+**Test-build inputs** — skip production gates for fast iteration:
 
-Images are published to gh-pages at: `https://dl.xiboplayer.org/images/`
+| Input | Type | Default | Description |
+|-------|------|---------|-------------|
+| `skip-preflight` | bool | `false` | Skip the "wait for current RPM version to appear in dl.xiboplayer.org/rpm" preflight check. Use for test workflows that don't depend on a fresh RPM. |
+| `upload-as-artifact` | bool | `false` | Upload the result as a GitHub Actions artifact (retention 14 days) instead of pushing to R2 and creating a release. Use for test builds. Also disables the `release` job at the end. |
 
-Users can download and flash:
+---
+
+#### Features
+
+- **Self-contained Everything ISO**: mkksiso-based offline install — all packages pre-downloaded and baked onto the ISO. No network needed at install time.
+- **Netinstall ISO**: mkksiso-based lightweight installer (~1.1 GB) — pulls packages from Fedora mirrors + our RPM repo at install time.
+- **Disk images** (raw + QCOW2): built with mkosi — pre-installed, user just dds them to disk and boots.
+- GNOME Kiosk session, auto-login, kiosk dispatcher script via `gnome-kiosk-script-session`
+- Published to R2 at `https://images.xiboplayer.org/<package>/<version>/`
+- GitHub Release auto-generated with download links and SHA256SUMS
+
+#### What you need in the caller repo
+
+1. **RPM spec file** (`rpm/*.spec`) with a literal `Version:` line — used by the version-detection job as a fallback when no git tag is present.
+2. **Kickstart file** (referenced by `kickstart-file`) — drives the ISO builds.
+3. **mkosi config** (`mkosi.conf` + `mkosi-extra/`) — drives the disk-images build.
+
+#### Image types produced
+
+| Type | Filename Pattern | Build job | Use case |
+|------|------------------|-----------|----------|
+| Everything ISO | `<pkg>-everything_<ver>_<arch>.iso` | `build-self-contained-iso` | Offline install on PCs, NUCs, signage boxes |
+| Netinstall ISO | `<pkg>-netinstall_<ver>_<arch>.iso` | `build-netinstall` | Lightweight installer, needs network |
+| QCOW2 | `<pkg>_<ver>_<arch>.qcow2` | `build-disk-images` | Virtual machines (QEMU/KVM, GNOME Boxes) |
+| Raw (xz) | `<pkg>_<ver>_<arch>.raw.xz` | `build-disk-images` | dd to SD card / eMMC / SSD |
+
+Images are uploaded to R2 at `https://images.xiboplayer.org/<package>/<version>/` and attached to the GitHub Release (files under 2 GB). A SHA256SUMS file and a `LATEST` pointer are written alongside.
+
+#### Default credentials
+
+- User: `xibo` / password: `xibo`
+- Root: locked by default
+
+---
+
+#### Test-build workflow pattern
+
+The `skip-preflight` + `upload-as-artifact` inputs enable a fast iteration loop for kickstart / mkosi-extra changes without needing to cut a new RPM version first. Combined with the customization inputs, you get full control over grub menu text, kernel cmdline, and which image variant gets built.
+
+**Example — `xiboplayer-kiosk/.github/workflows/test-image.yml`**:
+
+```yaml
+name: Test Kiosk Image (netinstall x86_64 only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['fix/**', 'test/**']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: xibo-players/.github/.github/workflows/build-iso.yml@<pinned-sha>
+    with:
+      package-name: xiboplayer-kiosk
+      kickstart-file: 'kickstart/xiboplayer-kiosk.ks'
+      # Only build the netinstall variant — fastest (~5 min)
+      build-disk-images: false
+      build-self-contained-iso: false
+      build-netinstall: true
+      architectures: 'x86_64'
+      # Skip the "wait for RPM in repo" preflight — test builds don't
+      # need a fresh RPM, they use the one already published
+      skip-preflight: true
+      # Upload result as GH Actions artifact, not to R2 or a release
+      upload-as-artifact: true
+      # Customize the ISO grub menu — preserves the verbs (Install /
+      # Test this media / Rescue), only renames the product
+      iso-grub-replacements: |
+        Fedora 43|xiboplayer kiosk
+      # Debug kernel cmdline — remove quiet splash, add verbose anaconda
+      iso-cmdline-remove: 'quiet rhgb splash'
+      iso-cmdline-append: 'systemd.log_level=debug inst.debug rd.shell rd.debug console=tty0 console=ttyS0,115200'
+    secrets: inherit
+```
+
+**Iteration loop:**
+
 ```bash
-# Flash installer ISO
-sudo dd if=xiboplayer-kiosk-installer_1.0.0_x86_64.iso of=/dev/sdX bs=8M
+# 1. Edit kickstart / mkosi-extra on a fix branch
+git checkout -b fix/my-test
+vim kickstart/xiboplayer-kiosk.ks
 
-# Or flash raw image
-xz -dc xiboplayer-kiosk_1.0.0_x86_64.raw.xz | sudo dd of=/dev/sdX bs=8M
+# 2. Push and trigger the test build
+git commit -am "test: $topic" && git push
+gh workflow run test-image.yml --ref fix/my-test
+
+# 3. Wait ~5 min, download the artifact
+gh run list --workflow=test-image.yml --limit 1
+gh run download <run-id>
+
+# 4. Boot in qemu and debug
+qemu-system-x86_64 -enable-kvm -m 4G \
+  -cdrom xiboplayer-kiosk-netinstall_*_x86_64.iso \
+  -drive file=/tmp/test.qcow2,format=qcow2 \
+  -serial mon:stdio
+# serial console streams to your terminal thanks to console=ttyS0 in -c
 ```
 
-**Default Credentials:**
-- User: `xibo` / Password: `xibo`
-- Root: `root` (locked by default on installer ISO)
+**What each customization flag buys you:**
+
+| Flag | Passed to `mkksiso` as | Effect |
+|------|----------------------|--------|
+| `iso-volid: xiboplayer-kiosk` | `-V xiboplayer-kiosk` | ISO volume label becomes `xiboplayer-kiosk`. Note: Fedora's default grub.cfg has `inst.stage2=hd:LABEL=Fedora-E-dvd-x86_64-43` hardcoded — if you override the volid without also rewriting the grub.cfg via `iso-grub-replacements`, anaconda won't find stage2 and the ISO won't boot. |
+| `iso-cmdline-append: 'inst.debug'` | `-c inst.debug` | Appends `inst.debug` to every `menuentry`'s `linux` line in the embedded grub.cfg. |
+| `iso-cmdline-remove: 'quiet rhgb splash'` | `-r 'quiet rhgb splash'` | Removes `quiet`, `rhgb`, `splash` from every `menuentry`'s `linux` line — unblocks verbose kernel + systemd output during install. |
+| `iso-grub-replacements: 'Fedora 43\|xiboplayer kiosk'` | `-R 'Fedora 43' 'xiboplayer kiosk'` | Runs sed-style text replacement on grub.cfg. `Install Fedora 43` → `Install xiboplayer kiosk`, `Test this media & install Fedora 43` → `Test this media & install xiboplayer kiosk`, etc — preserves the verbs, only renames the product. Multiple lines → multiple `-R` flag pairs. |
+
+**Common pitfalls:**
+
+- **The pipe delimiter in `iso-grub-replacements` is parsed literally** — if your FROM or TO text contains a `|` character, you'll need to either escape it or use the non-pipe form (which isn't supported yet; file an issue).
+- **mkksiso `-R` does a simple text replacement, not a menuentry rewrite** — you can't use it to DELETE an entry (e.g. remove the "Test this media" entry entirely). For full grub.cfg replacement, use `iso-grub-replacements` to neutralize the text OR post-process the ISO with xorriso (not currently wired into this workflow).
+- **Don't set `iso-volid` without also providing the matching `iso-grub-replacements`** — the Fedora-provided grub.cfg references the volid in `inst.stage2=hd:LABEL=` and `inst.ks=hd:LABEL=`. Changing one without the other breaks the boot.
+- **`skip-preflight: true` + a stale RPM version mismatch** — if your kickstart references packages at a version that isn't yet in the RPM repo, the install will fail at the `dnf install` step inside anaconda. The preflight gate exists precisely to prevent this; only skip it when you know the RPM version is unchanged.
 
 ---
 
