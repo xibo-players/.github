@@ -34,6 +34,35 @@ on:
       default-version:
         type: string
         default: '0.2.0'
+      # ── Customization + test-iteration inputs ──────────────────────────
+      # All default to empty/false so existing callers keep working
+      # byte-for-byte. Set from test-image workflows to override grub menu
+      # text, inject debug kernel args, skip the "wait for repo" gate, or
+      # upload the result as a GH Actions artifact instead of R2.
+      iso-volid:
+        type: string
+        default: ''
+        description: 'Override the output ISO volume ID (mkksiso -V). When set, remember to also rewrite the grub.cfg label references via iso-grub-replacements.'
+      iso-cmdline-append:
+        type: string
+        default: ''
+        description: 'Append to the installer kernel cmdline in grub.cfg (mkksiso -c). Space-separated list of args.'
+      iso-cmdline-remove:
+        type: string
+        default: ''
+        description: 'Remove args from the installer kernel cmdline in grub.cfg (mkksiso -r). Space-separated list, e.g. "quiet rhgb splash".'
+      iso-grub-replacements:
+        type: string
+        default: ''
+        description: 'Multiline text replacements applied to grub.cfg (mkksiso -R). One pair per line, pipe-separated: FROM|TO. Example: "Fedora 43|xiboplayer kiosk" renames every entry.'
+      skip-preflight:
+        type: boolean
+        default: false
+        description: 'Skip the "wait for package version to appear in the repo" preflight check. Use for test builds that do not need fresh RPMs.'
+      upload-as-artifact:
+        type: boolean
+        default: false
+        description: 'Upload built images as GH Actions artifacts (retention 14 days) instead of to R2 / creating a release. Use for test builds.'
 
 jobs:
   # ── Pre-flight: wait for current package version to appear in the repo
@@ -41,6 +70,7 @@ jobs:
   # workflows run in parallel — this step polls until our version lands.
   preflight:
     name: Verify packages
+    if: inputs.skip-preflight != true
     runs-on: ubuntu-latest
     needs: [detect-version]
     steps:
@@ -161,7 +191,13 @@ jobs:
   # ── Disk images (raw + QCOW2) via mkosi ──────────────────────────────
   build-disk-images:
     needs: [preflight, detect-version]
-    if: inputs.build-disk-images == true
+    # `always()` lets this job run even when the preflight was skipped
+    # (which leaves its `needs:` result as `skipped` rather than `success`).
+    if: |
+      always()
+      && inputs.build-disk-images == true
+      && needs.detect-version.result == 'success'
+      && (needs.preflight.result == 'success' || needs.preflight.result == 'skipped')
     name: Disk Images (${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     container:
@@ -240,6 +276,7 @@ jobs:
         run: ls -lah output/
 
       - name: Upload to R2
+        if: inputs.upload-as-artifact != true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -257,10 +294,25 @@ jobs:
               --endpoint-url "$R2_ENDPOINT"
           done
 
+      - name: Upload as GH Actions artifact
+        if: inputs.upload-as-artifact == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-disk-${{ matrix.arch }}-${{ steps.version.outputs.version }}
+          path: |
+            output/${{ inputs.package-name }}_${{ steps.version.outputs.version }}_${{ matrix.arch }}.qcow2
+            output/${{ inputs.package-name }}_${{ steps.version.outputs.version }}_${{ matrix.arch }}.raw.xz
+          retention-days: 14
+          if-no-files-found: error
+
   # ── Self-contained ISO (offline install) ─────────────────────────────
   build-self-contained-iso:
     needs: [preflight, detect-version]
-    if: inputs.build-self-contained-iso == true
+    if: |
+      always()
+      && inputs.build-self-contained-iso == true
+      && needs.detect-version.result == 'success'
+      && (needs.preflight.result == 'success' || needs.preflight.result == 'skipped')
     name: Offline ISO (${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     container:
@@ -360,17 +412,36 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
           ARCH: ${{ matrix.arch }}
+          ISO_VOLID: ${{ inputs.iso-volid }}
+          ISO_CMDLINE_APPEND: ${{ inputs.iso-cmdline-append }}
+          ISO_CMDLINE_REMOVE: ${{ inputs.iso-cmdline-remove }}
+          ISO_GRUB_REPLACEMENTS: ${{ inputs.iso-grub-replacements }}
         run: |
           mkdir -p /tmp/iso-extra/local-repo
           cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
 
-          mkksiso \
+          # Build dynamic mkksiso arg array — same pattern as the
+          # netinstall job. Empty inputs contribute no flag.
+          MKKSISO_ARGS=()
+          [ -n "$ISO_VOLID" ] && MKKSISO_ARGS+=(-V "$ISO_VOLID")
+          [ -n "$ISO_CMDLINE_APPEND" ] && MKKSISO_ARGS+=(-c "$ISO_CMDLINE_APPEND")
+          [ -n "$ISO_CMDLINE_REMOVE" ] && MKKSISO_ARGS+=(-r "$ISO_CMDLINE_REMOVE")
+          if [ -n "$ISO_GRUB_REPLACEMENTS" ]; then
+            while IFS='|' read -r from to; do
+              [ -z "$from" ] && continue
+              MKKSISO_ARGS+=(-R "$from" "$to")
+            done <<< "$ISO_GRUB_REPLACEMENTS"
+          fi
+
+          echo "mkksiso extra args: ${MKKSISO_ARGS[*]}"
+
+          mkksiso "${MKKSISO_ARGS[@]}" \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-netinst.iso \
             ${PACKAGE}-everything_${VERSION}_${ARCH}.iso || \
           (echo "Retrying..." && sleep 10 && \
-           mkksiso \
+           mkksiso "${MKKSISO_ARGS[@]}" \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-netinst.iso \
@@ -379,6 +450,7 @@ jobs:
           ls -lah ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
 
       - name: Upload to R2
+        if: inputs.upload-as-artifact != true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -396,10 +468,23 @@ jobs:
               --endpoint-url "$R2_ENDPOINT"
           done
 
+      - name: Upload as GH Actions artifact
+        if: inputs.upload-as-artifact == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-everything-${{ matrix.arch }}-${{ steps.version.outputs.version }}
+          path: ${{ inputs.package-name }}-everything_${{ steps.version.outputs.version }}_${{ matrix.arch }}.iso
+          retention-days: 14
+          if-no-files-found: error
+
   # ── Netinstall ISO (lightweight, needs network) ──────────────────────
   build-netinstall:
     needs: [preflight, detect-version]
-    if: inputs.build-netinstall == true
+    if: |
+      always()
+      && inputs.build-netinstall == true
+      && needs.detect-version.result == 'success'
+      && (needs.preflight.result == 'success' || needs.preflight.result == 'skipped')
     name: Netinstall ISO (${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     container:
@@ -436,8 +521,28 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           PACKAGE: ${{ inputs.package-name }}
           ARCH: ${{ matrix.arch }}
+          ISO_VOLID: ${{ inputs.iso-volid }}
+          ISO_CMDLINE_APPEND: ${{ inputs.iso-cmdline-append }}
+          ISO_CMDLINE_REMOVE: ${{ inputs.iso-cmdline-remove }}
+          ISO_GRUB_REPLACEMENTS: ${{ inputs.iso-grub-replacements }}
         run: |
-          mkksiso \
+          # Build dynamic mkksiso arg array from customization inputs.
+          # Each input is optional; empty values contribute no flag.
+          MKKSISO_ARGS=()
+          [ -n "$ISO_VOLID" ] && MKKSISO_ARGS+=(-V "$ISO_VOLID")
+          [ -n "$ISO_CMDLINE_APPEND" ] && MKKSISO_ARGS+=(-c "$ISO_CMDLINE_APPEND")
+          [ -n "$ISO_CMDLINE_REMOVE" ] && MKKSISO_ARGS+=(-r "$ISO_CMDLINE_REMOVE")
+          # Multiline FROM|TO replacements — one pair per non-empty line
+          if [ -n "$ISO_GRUB_REPLACEMENTS" ]; then
+            while IFS='|' read -r from to; do
+              [ -z "$from" ] && continue
+              MKKSISO_ARGS+=(-R "$from" "$to")
+            done <<< "$ISO_GRUB_REPLACEMENTS"
+          fi
+
+          echo "mkksiso extra args: ${MKKSISO_ARGS[*]}"
+
+          mkksiso "${MKKSISO_ARGS[@]}" \
             --ks "${{ inputs.kickstart-file }}" \
             /tmp/fedora-netinst.iso \
             ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
@@ -445,6 +550,7 @@ jobs:
           ls -lah ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
 
       - name: Upload to R2
+        if: inputs.upload-as-artifact != true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -462,11 +568,25 @@ jobs:
               --endpoint-url "$R2_ENDPOINT"
           done
 
+      - name: Upload as GH Actions artifact
+        if: inputs.upload-as-artifact == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.package-name }}-netinstall-${{ matrix.arch }}-${{ steps.version.outputs.version }}
+          path: ${{ inputs.package-name }}-netinstall_${{ steps.version.outputs.version }}_${{ matrix.arch }}.iso
+          retention-days: 14
+          if-no-files-found: error
+
   # ── GitHub Release with download links ───────────────────────────────
   release:
     name: Create GitHub Release
     needs: [detect-version, build-disk-images, build-self-contained-iso, build-netinstall]
-    if: always() && (needs.build-disk-images.result == 'success' || needs.build-self-contained-iso.result == 'success' || needs.build-netinstall.result == 'success')
+    # Skip release creation when artifacts are being uploaded to GH Actions
+    # (test builds). Release body assumes files are on R2 — which they aren't.
+    if: |
+      always()
+      && inputs.upload-as-artifact != true
+      && (needs.build-disk-images.result == 'success' || needs.build-self-contained-iso.result == 'success' || needs.build-netinstall.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
