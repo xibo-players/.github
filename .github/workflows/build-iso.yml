@@ -472,20 +472,10 @@ jobs:
           mkdir -p /tmp/iso-extra/local-repo
           cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
 
-          # Custom grub.cfg overlay — same path trick as netinstall:
-          # /tmp/EFI basename = "EFI" → merges with existing /EFI/ on ISO.
-          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
-            mkdir -p /tmp/EFI/BOOT
-            cp "$ISO_GRUB_FILE" /tmp/EFI/BOOT/grub.cfg
-            MKKSISO_ARGS+=(--add /tmp/EFI)
-            echo "Using custom grub.cfg from $ISO_GRUB_FILE"
-          fi
-
           MKKSISO_ARGS=()
           [ -n "$ISO_VOLID" ] && MKKSISO_ARGS+=(-V "$ISO_VOLID")
           [ -n "$ISO_CMDLINE_APPEND" ] && MKKSISO_ARGS+=(-c "$ISO_CMDLINE_APPEND")
           [ -n "$ISO_CMDLINE_REMOVE" ] && MKKSISO_ARGS+=(-r "$ISO_CMDLINE_REMOVE")
-          # String replacements only if no custom grub file
           if [ -z "$ISO_GRUB_FILE" ] && [ -n "$ISO_GRUB_REPLACEMENTS" ]; then
             while IFS='|' read -r from to; do
               [ -z "$from" ] && continue
@@ -515,17 +505,29 @@ jobs:
             rm -f "$logfile"; return 1
           }
 
+          ISO_OUT="${PACKAGE}-everything_${VERSION}_${ARCH}.iso"
+
           retry_if_unreachable mkksiso "${MKKSISO_ARGS[@]}" \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-netinst.iso \
-            ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
+            "$ISO_OUT"
 
-          # Embed checksum so "Verify media" (rd.live.check) works.
-          # --force overwrites Fedora's stale checksum.
-          implantisomd5 --force ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
+          # Post-mkksiso: patch grub.cfg (same approach as netinstall)
+          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
+            echo "Patching grub.cfg in ISO with $ISO_GRUB_FILE"
+            cp "$ISO_OUT" "${ISO_OUT}.orig"
+            xorriso -indev "${ISO_OUT}.orig" \
+              -outdev "$ISO_OUT" \
+              -boot_image any replay \
+              -map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
+              -end
+            rm -f "${ISO_OUT}.orig"
+            echo "grub.cfg patched successfully"
+          fi
 
-          ls -lah ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
+          implantisomd5 --force "$ISO_OUT"
+          ls -lah "$ISO_OUT"
 
       - name: Upload to R2
         if: inputs.upload-as-artifact != true
@@ -612,21 +614,8 @@ jobs:
           [ -n "$ISO_CMDLINE_APPEND" ] && MKKSISO_ARGS+=(-c "$ISO_CMDLINE_APPEND")
           [ -n "$ISO_CMDLINE_REMOVE" ] && MKKSISO_ARGS+=(-r "$ISO_CMDLINE_REMOVE")
 
-          # Custom grub.cfg — full file replacement via overlay.
-          # Takes precedence over iso-grub-replacements (string subst).
-          # mkksiso --add overlays a directory onto the ISO root,
-          # preserving subdirectory structure. EFI/BOOT/grub.cfg in
-          # the overlay replaces Fedora's default grub.cfg.
-          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
-            # mkksiso --add uses the directory BASENAME as the ISO path.
-            # /tmp/EFI → merges with the existing /EFI/ on the ISO,
-            # so BOOT/grub.cfg inside it overwrites Fedora's default.
-            mkdir -p /tmp/EFI/BOOT
-            cp "$ISO_GRUB_FILE" /tmp/EFI/BOOT/grub.cfg
-            MKKSISO_ARGS+=(--add /tmp/EFI)
-            echo "Using custom grub.cfg from $ISO_GRUB_FILE"
-          elif [ -n "$ISO_GRUB_REPLACEMENTS" ]; then
-            # Fallback: string replacement if no custom file provided
+          # String replacements (fallback when no custom grub file)
+          if [ -z "$ISO_GRUB_FILE" ] && [ -n "$ISO_GRUB_REPLACEMENTS" ]; then
             while IFS='|' read -r from to; do
               [ -z "$from" ] && continue
               MKKSISO_ARGS+=(-R "$from" "$to")
@@ -655,16 +644,40 @@ jobs:
             rm -f "$logfile"; return 1
           }
 
+          ISO_OUT="${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso"
+
           retry_if_unreachable mkksiso "${MKKSISO_ARGS[@]}" \
             --ks "${{ inputs.kickstart-file }}" \
             /tmp/fedora-netinst.iso \
-            ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
+            "$ISO_OUT"
+
+          # Post-mkksiso: replace grub.cfg with our custom version.
+          # mkksiso --add overlay doesn't work because mkksiso's own
+          # grub.cfg processing runs AFTER the overlay and overwrites
+          # our file. So we patch the finished ISO using xorriso.
+          #
+          # -boot_image any replay preserves ALL boot structures
+          # (UEFI shim chain + BIOS isolinux). -map replaces the
+          # single file. Per Debian RepackBootableISO wiki + xorriso
+          # man page, this is the documented way to patch a single
+          # file in a bootable ISO without breaking boot.
+          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
+            echo "Patching grub.cfg in ISO with $ISO_GRUB_FILE"
+            cp "$ISO_OUT" "${ISO_OUT}.orig"
+            xorriso -indev "${ISO_OUT}.orig" \
+              -outdev "$ISO_OUT" \
+              -boot_image any replay \
+              -map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
+              -end
+            rm -f "${ISO_OUT}.orig"
+            echo "grub.cfg patched successfully"
+          fi
 
           # Embed checksum so "Verify media" (rd.live.check) works
           # on the modified ISO. --force overwrites Fedora's stale checksum.
-          implantisomd5 --force ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
+          implantisomd5 --force "$ISO_OUT"
 
-          ls -lah ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
+          ls -lah "$ISO_OUT"
 
       - name: Upload to R2
         if: inputs.upload-as-artifact != true
