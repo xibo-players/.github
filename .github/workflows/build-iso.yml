@@ -824,11 +824,14 @@ jobs:
           # isn't available (e.g. test builds without secrets), skip
           # signing gracefully — the checksums are still useful unsigned.
           if [ -n "$RPM_GPG_KEY" ]; then
-            echo "$RPM_GPG_KEY" | gpg --batch --import 2>/dev/null
-            gpg --batch --yes --detach-sign --armor \
-              ${RPM_GPG_KEY_ID:+--default-key "$RPM_GPG_KEY_ID"} \
-              /tmp/checksums/SHA256SUMS
-            echo "GPG signature: SHA256SUMS.asc created"
+            echo "$RPM_GPG_KEY" | gpg --batch --import 2>&1 || true
+            if gpg --batch --yes --detach-sign --armor \
+                ${RPM_GPG_KEY_ID:+--default-key "$RPM_GPG_KEY_ID"} \
+                /tmp/checksums/SHA256SUMS 2>&1; then
+              echo "GPG signature: SHA256SUMS.asc created"
+            else
+              echo "::warning::GPG signing failed (key import or signing error) — SHA256SUMS uploaded unsigned"
+            fi
           else
             echo "::warning::RPM_GPG_KEY not set — SHA256SUMS NOT GPG-signed"
           fi
