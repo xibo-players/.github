@@ -472,10 +472,12 @@ jobs:
           mkdir -p /tmp/iso-extra/local-repo
           cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
 
-          # Custom grub.cfg overlay — same logic as the netinstall job.
+          # Custom grub.cfg overlay — same path trick as netinstall:
+          # /tmp/EFI basename = "EFI" → merges with existing /EFI/ on ISO.
           if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
-            mkdir -p /tmp/iso-extra/EFI/BOOT
-            cp "$ISO_GRUB_FILE" /tmp/iso-extra/EFI/BOOT/grub.cfg
+            mkdir -p /tmp/EFI/BOOT
+            cp "$ISO_GRUB_FILE" /tmp/EFI/BOOT/grub.cfg
+            MKKSISO_ARGS+=(--add /tmp/EFI)
             echo "Using custom grub.cfg from $ISO_GRUB_FILE"
           fi
 
@@ -519,8 +521,9 @@ jobs:
             /tmp/fedora-netinst.iso \
             ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
 
-          # Embed checksum so "Verify media" (rd.live.check) works
-          implantisomd5 ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
+          # Embed checksum so "Verify media" (rd.live.check) works.
+          # --force overwrites Fedora's stale checksum.
+          implantisomd5 --force ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
 
           ls -lah ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
 
@@ -615,9 +618,12 @@ jobs:
           # preserving subdirectory structure. EFI/BOOT/grub.cfg in
           # the overlay replaces Fedora's default grub.cfg.
           if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
-            mkdir -p /tmp/grub-overlay/EFI/BOOT
-            cp "$ISO_GRUB_FILE" /tmp/grub-overlay/EFI/BOOT/grub.cfg
-            MKKSISO_ARGS+=(--add /tmp/grub-overlay)
+            # mkksiso --add uses the directory BASENAME as the ISO path.
+            # /tmp/EFI → merges with the existing /EFI/ on the ISO,
+            # so BOOT/grub.cfg inside it overwrites Fedora's default.
+            mkdir -p /tmp/EFI/BOOT
+            cp "$ISO_GRUB_FILE" /tmp/EFI/BOOT/grub.cfg
+            MKKSISO_ARGS+=(--add /tmp/EFI)
             echo "Using custom grub.cfg from $ISO_GRUB_FILE"
           elif [ -n "$ISO_GRUB_REPLACEMENTS" ]; then
             # Fallback: string replacement if no custom file provided
@@ -655,8 +661,8 @@ jobs:
             ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
 
           # Embed checksum so "Verify media" (rd.live.check) works
-          # on the modified ISO. Must run AFTER mkksiso, BEFORE upload.
-          implantisomd5 ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
+          # on the modified ISO. --force overwrites Fedora's stale checksum.
+          implantisomd5 --force ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
 
           ls -lah ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
 
