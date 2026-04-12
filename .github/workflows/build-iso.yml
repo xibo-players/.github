@@ -810,10 +810,12 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           RPM_GPG_KEY: ${{ secrets.RPM_GPG_KEY }}
           RPM_GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
+          RPM_GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
           PACKAGE: ${{ inputs.package-name }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           pip install awscli 2>/dev/null || true
+          dnf install -y gnupg2 pinentry 2>/dev/null || true
           BUCKET="${R2_BUCKET}"
           PREFIX="${PACKAGE}/${VERSION}"
 
@@ -836,19 +838,46 @@ jobs:
           cat /tmp/checksums/SHA256SUMS
 
           # GPG-sign SHA256SUMS so operators can verify provenance.
-          # Uses the same RPM signing key (RPM_GPG_KEY / RPM_GPG_KEY_ID)
-          # that signs the xiboplayer-kiosk RPM packages. If the key
-          # isn't available (e.g. test builds without secrets), skip
-          # signing gracefully — the checksums are still useful unsigned.
+          # Uses the SAME key + passphrase mechanism as build-rpm.yml:
+          #   - RPM_GPG_KEY is base64-encoded (must decode before import)
+          #   - RPM_GPG_PASSPHRASE may be empty (key with no passphrase)
+          #     or set at org/repo level
+          #   - Custom pinentry-ci serves the passphrase non-interactively
+          #     (GPG in CI has no /dev/tty for interactive pinentry)
+          #
+          # If key/passphrase aren't available (test builds, forks),
+          # signing is skipped gracefully — checksums still upload.
           if [ -n "$RPM_GPG_KEY" ]; then
-            echo "$RPM_GPG_KEY" | gpg --batch --import 2>&1 || true
+            echo "$RPM_GPG_KEY" | base64 -d | gpg --batch --import 2>&1 || true
+
+            # Create the same pinentry-ci that build-rpm.yml uses
+            printf '%s' "$RPM_GPG_PASSPHRASE" > /tmp/.gpg-passphrase
+            chmod 600 /tmp/.gpg-passphrase
+            cat > /usr/local/bin/pinentry-ci << 'PINENTRY'
+            #!/bin/bash
+            echo "OK Pleased to meet you"
+            while IFS= read -r cmd; do
+              case "${cmd%% *}" in
+                GETPIN) echo "D $(cat /tmp/.gpg-passphrase)"; echo "OK" ;;
+                BYE)    echo "OK closing connection"; exit 0 ;;
+                *)      echo "OK" ;;
+              esac
+            done
+          PINENTRY
+            chmod +x /usr/local/bin/pinentry-ci
+            gpgconf --kill gpg-agent 2>/dev/null || true
+            GPG_AGENT_CONF="$(gpgconf --list-dirs homedir)/gpg-agent.conf"
+            mkdir -p "$(dirname "$GPG_AGENT_CONF")"
+            echo "pinentry-program /usr/local/bin/pinentry-ci" > "$GPG_AGENT_CONF"
+
             if gpg --batch --yes --detach-sign --armor \
                 ${RPM_GPG_KEY_ID:+--default-key "$RPM_GPG_KEY_ID"} \
                 /tmp/checksums/SHA256SUMS 2>&1; then
               echo "GPG signature: SHA256SUMS.asc created"
             else
-              echo "::warning::GPG signing failed (key import or signing error) — SHA256SUMS uploaded unsigned"
+              echo "::warning::GPG signing failed — SHA256SUMS uploaded unsigned"
             fi
+            rm -f /tmp/.gpg-passphrase
           else
             echo "::warning::RPM_GPG_KEY not set — SHA256SUMS NOT GPG-signed"
           fi
