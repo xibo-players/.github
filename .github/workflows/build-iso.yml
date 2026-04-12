@@ -516,13 +516,15 @@ jobs:
           # Post-mkksiso: patch grub.cfg (same approach as netinstall)
           if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
             echo "Patching grub.cfg in ISO with $ISO_GRUB_FILE"
-            cp "$ISO_OUT" "${ISO_OUT}.orig"
-            xorriso -indev "${ISO_OUT}.orig" \
-              -outdev "$ISO_OUT" \
+            # -outdev must be a FRESH file (xorriso refuses to write
+            # to a non-empty file that differs from -indev). Write to
+            # .tmp then mv back.
+            xorriso -indev "$ISO_OUT" \
+              -outdev "${ISO_OUT}.tmp" \
               -boot_image any replay \
               -map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
               -end
-            rm -f "${ISO_OUT}.orig"
+            mv "${ISO_OUT}.tmp" "$ISO_OUT"
             echo "grub.cfg patched successfully"
           fi
 
@@ -663,13 +665,15 @@ jobs:
           # file in a bootable ISO without breaking boot.
           if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
             echo "Patching grub.cfg in ISO with $ISO_GRUB_FILE"
-            cp "$ISO_OUT" "${ISO_OUT}.orig"
-            xorriso -indev "${ISO_OUT}.orig" \
-              -outdev "$ISO_OUT" \
+            # -outdev must be a FRESH file (xorriso refuses to write
+            # to a non-empty file that differs from -indev). Write to
+            # .tmp then mv back.
+            xorriso -indev "$ISO_OUT" \
+              -outdev "${ISO_OUT}.tmp" \
               -boot_image any replay \
               -map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
               -end
-            rm -f "${ISO_OUT}.orig"
+            mv "${ISO_OUT}.tmp" "$ISO_OUT"
             echo "grub.cfg patched successfully"
           fi
 
