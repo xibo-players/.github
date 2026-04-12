@@ -252,9 +252,30 @@ jobs:
 
       - name: Build disk image
         run: |
-          mkosi --force --image-version=${{ steps.version.outputs.version }} || \
-            (echo "Retrying..." && sleep 10 && \
-             mkosi --force --image-version=${{ steps.version.outputs.version }})
+          # Retry wrapper: only retries on transient network errors (mirror
+          # unreachable, DNS failure, curl timeout). Non-network errors
+          # (package conflict, missing dependency, GPG check) fail immediately.
+          retry_if_unreachable() {
+            local max_attempts=3 backoff=30 attempt=1 logfile
+            logfile=$(mktemp)
+            while [ "$attempt" -le "$max_attempts" ]; do
+              if "$@" 2>&1 | tee "$logfile"; then
+                rm -f "$logfile"; return 0
+              fi
+              if grep -qiE 'curl error \(([67]|28)\)|could not connect|connection refused|timed out|all mirrors were tried|network is unreachable|name or service not known|failed to connect.*port' "$logfile"; then
+                echo "::warning::Network error on attempt $attempt/$max_attempts, retrying in ${backoff}s..."
+                sleep "$backoff"
+                attempt=$((attempt + 1))
+              else
+                echo "::error::Non-network build error — not retrying"
+                rm -f "$logfile"; return 1
+              fi
+            done
+            echo "::error::Network error persisted after $max_attempts attempts"
+            rm -f "$logfile"; return 1
+          }
+
+          retry_if_unreachable mkosi --force --image-version=${{ steps.version.outputs.version }}
 
       - name: Convert and compress
         env:
@@ -353,7 +374,29 @@ jobs:
           gpgcheck=0
           EOF
 
-          dnf install -y \
+          # RPMFusion mirrors are occasionally unreachable — retry on
+          # transient network errors only, fail fast on real dnf errors.
+          retry_if_unreachable() {
+            local max_attempts=3 backoff=30 attempt=1 logfile
+            logfile=$(mktemp)
+            while [ "$attempt" -le "$max_attempts" ]; do
+              if "$@" 2>&1 | tee "$logfile"; then
+                rm -f "$logfile"; return 0
+              fi
+              if grep -qiE 'curl error \(([67]|28)\)|could not connect|connection refused|timed out|all mirrors were tried|network is unreachable|name or service not known|failed to connect.*port' "$logfile"; then
+                echo "::warning::Network error on attempt $attempt/$max_attempts, retrying in ${backoff}s..."
+                sleep "$backoff"
+                attempt=$((attempt + 1))
+              else
+                echo "::error::Non-network dnf error — not retrying"
+                rm -f "$logfile"; return 1
+              fi
+            done
+            echo "::error::Network error persisted after $max_attempts attempts"
+            rm -f "$logfile"; return 1
+          }
+
+          retry_if_unreachable dnf install -y \
             https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-43.noarch.rpm \
             https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-43.noarch.rpm
 
@@ -404,7 +447,11 @@ jobs:
           # Use netinst as base (~700 MB) instead of Workstation Live (~2.2 GB)
           # The netinst has Anaconda installer; our local repo provides all packages
           ISO_NAME="Fedora-Everything-netinst-${ARCH}-43-1.6.iso"
-          curl -L -o /tmp/fedora-netinst.iso \
+
+          # curl with retry — Fedora mirrors are generally reliable but
+          # CDN edge nodes occasionally return transient errors.
+          curl --retry 3 --retry-delay 15 --retry-connrefused \
+            -L -o /tmp/fedora-netinst.iso \
             "https://download.fedoraproject.org/pub/fedora/linux/releases/43/Everything/${ARCH}/iso/${ISO_NAME}"
 
       - name: Build self-contained offline ISO
