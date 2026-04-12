@@ -715,12 +715,14 @@ jobs:
             gh release create "$TAG" --title "${PACKAGE} ${TAG}" --notes ""
           gh release edit "$TAG" --notes "$NOTES"
 
-      - name: Generate SHA256SUMS and LATEST on R2
+      - name: Generate SHA256SUMS, GPG-sign, and write LATEST on R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          RPM_GPG_KEY: ${{ secrets.RPM_GPG_KEY }}
+          RPM_GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
           PACKAGE: ${{ inputs.package-name }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -728,20 +730,46 @@ jobs:
           BUCKET="${R2_BUCKET}"
           PREFIX="${PACKAGE}/${VERSION}"
 
-          # List all files for this version and generate checksums
+          # Download all image files for this version (NOT SHA256SUMS
+          # itself — the old code checksummed its own empty file,
+          # producing the sha256-of-empty-string e3b0c44... as the
+          # first entry, which is wrong).
           mkdir -p /tmp/checksums
           aws s3 ls "$BUCKET/$PREFIX/" --endpoint-url "$R2_ENDPOINT" | awk '{print $4}' | \
           while read -r name; do
             [ -n "$name" ] || continue
+            # Skip SHA256SUMS and any .asc/.gpg files from previous runs
+            case "$name" in SHA256SUMS*|*.asc|*.gpg) continue ;; esac
             aws s3 cp "$BUCKET/$PREFIX/$name" "/tmp/checksums/$name" --endpoint-url "$R2_ENDPOINT"
           done
 
+          # Generate SHA256SUMS — only image files, no self-reference
           (cd /tmp/checksums && sha256sum * > SHA256SUMS)
+          echo "=== SHA256SUMS ==="
           cat /tmp/checksums/SHA256SUMS
 
-          # Upload SHA256SUMS
+          # GPG-sign SHA256SUMS so operators can verify provenance.
+          # Uses the same RPM signing key (RPM_GPG_KEY / RPM_GPG_KEY_ID)
+          # that signs the xiboplayer-kiosk RPM packages. If the key
+          # isn't available (e.g. test builds without secrets), skip
+          # signing gracefully — the checksums are still useful unsigned.
+          if [ -n "$RPM_GPG_KEY" ]; then
+            echo "$RPM_GPG_KEY" | gpg --batch --import 2>/dev/null
+            gpg --batch --yes --detach-sign --armor \
+              ${RPM_GPG_KEY_ID:+--default-key "$RPM_GPG_KEY_ID"} \
+              /tmp/checksums/SHA256SUMS
+            echo "GPG signature: SHA256SUMS.asc created"
+          else
+            echo "::warning::RPM_GPG_KEY not set — SHA256SUMS NOT GPG-signed"
+          fi
+
+          # Upload SHA256SUMS + signature
           aws s3 cp /tmp/checksums/SHA256SUMS "$BUCKET/$PREFIX/SHA256SUMS" \
             --endpoint-url "$R2_ENDPOINT"
+          if [ -f /tmp/checksums/SHA256SUMS.asc ]; then
+            aws s3 cp /tmp/checksums/SHA256SUMS.asc "$BUCKET/$PREFIX/SHA256SUMS.asc" \
+              --endpoint-url "$R2_ENDPOINT"
+          fi
 
           # Write LATEST version file
           echo "$VERSION" > /tmp/LATEST
