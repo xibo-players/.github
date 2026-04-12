@@ -54,7 +54,11 @@ on:
       iso-grub-replacements:
         type: string
         default: ''
-        description: 'Multiline text replacements applied to grub.cfg (mkksiso -R). One pair per line, pipe-separated: FROM|TO. Example: "Fedora 43|xiboplayer kiosk" renames every entry.'
+        description: 'Multiline text replacements applied to grub.cfg (mkksiso -R). One pair per line, pipe-separated: FROM|TO. Example: "Fedora 43|xiboplayer kiosk" renames every entry. Ignored if iso-grub-file is set (full replacement takes precedence over string substitution).'
+      iso-grub-file:
+        type: string
+        default: ''
+        description: 'Path to a custom grub.cfg file (relative to repo root) that REPLACES Fedora''s default grub.cfg in the ISO. Injected via mkksiso --add as an EFI/BOOT/grub.cfg overlay. Takes precedence over iso-grub-replacements. mkksiso --ks still adds inst.ks= to each linuxefi line after the overlay.'
       skip-preflight:
         type: boolean
         default: false
@@ -348,7 +352,7 @@ jobs:
       - name: Install dependencies
         run: |
           dnf install -y \
-            lorax pykickstart createrepo_c dnf-plugins-core curl xz awscli2
+            lorax pykickstart createrepo_c dnf-plugins-core curl xz awscli2 isomd5sum
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -463,17 +467,24 @@ jobs:
           ISO_CMDLINE_APPEND: ${{ inputs.iso-cmdline-append }}
           ISO_CMDLINE_REMOVE: ${{ inputs.iso-cmdline-remove }}
           ISO_GRUB_REPLACEMENTS: ${{ inputs.iso-grub-replacements }}
+          ISO_GRUB_FILE: ${{ inputs.iso-grub-file }}
         run: |
           mkdir -p /tmp/iso-extra/local-repo
           cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
 
-          # Build dynamic mkksiso arg array — same pattern as the
-          # netinstall job. Empty inputs contribute no flag.
+          # Custom grub.cfg overlay — same logic as the netinstall job.
+          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
+            mkdir -p /tmp/iso-extra/EFI/BOOT
+            cp "$ISO_GRUB_FILE" /tmp/iso-extra/EFI/BOOT/grub.cfg
+            echo "Using custom grub.cfg from $ISO_GRUB_FILE"
+          fi
+
           MKKSISO_ARGS=()
           [ -n "$ISO_VOLID" ] && MKKSISO_ARGS+=(-V "$ISO_VOLID")
           [ -n "$ISO_CMDLINE_APPEND" ] && MKKSISO_ARGS+=(-c "$ISO_CMDLINE_APPEND")
           [ -n "$ISO_CMDLINE_REMOVE" ] && MKKSISO_ARGS+=(-r "$ISO_CMDLINE_REMOVE")
-          if [ -n "$ISO_GRUB_REPLACEMENTS" ]; then
+          # String replacements only if no custom grub file
+          if [ -z "$ISO_GRUB_FILE" ] && [ -n "$ISO_GRUB_REPLACEMENTS" ]; then
             while IFS='|' read -r from to; do
               [ -z "$from" ] && continue
               MKKSISO_ARGS+=(-R "$from" "$to")
@@ -482,17 +493,34 @@ jobs:
 
           echo "mkksiso extra args: ${MKKSISO_ARGS[*]}"
 
-          mkksiso "${MKKSISO_ARGS[@]}" \
+          retry_if_unreachable() {
+            local max_attempts=3 backoff=30 attempt=1 logfile
+            logfile=$(mktemp)
+            while [ "$attempt" -le "$max_attempts" ]; do
+              if "$@" 2>&1 | tee "$logfile"; then
+                rm -f "$logfile"; return 0
+              fi
+              if grep -qiE 'curl error \(([67]|28)\)|could not connect|connection refused|timed out|all mirrors were tried|network is unreachable|name or service not known|failed to connect.*port' "$logfile"; then
+                echo "::warning::Network error on attempt $attempt/$max_attempts, retrying in ${backoff}s..."
+                sleep "$backoff"
+                attempt=$((attempt + 1))
+              else
+                echo "::error::Non-network build error — not retrying"
+                rm -f "$logfile"; return 1
+              fi
+            done
+            echo "::error::Network error persisted after $max_attempts attempts"
+            rm -f "$logfile"; return 1
+          }
+
+          retry_if_unreachable mkksiso "${MKKSISO_ARGS[@]}" \
             --ks /tmp/selfcontained.ks \
             --add /tmp/iso-extra \
             /tmp/fedora-netinst.iso \
-            ${PACKAGE}-everything_${VERSION}_${ARCH}.iso || \
-          (echo "Retrying..." && sleep 10 && \
-           mkksiso "${MKKSISO_ARGS[@]}" \
-            --ks /tmp/selfcontained.ks \
-            --add /tmp/iso-extra \
-            /tmp/fedora-netinst.iso \
-            ${PACKAGE}-everything_${VERSION}_${ARCH}.iso)
+            ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
+
+          # Embed checksum so "Verify media" (rd.live.check) works
+          implantisomd5 ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
 
           ls -lah ${PACKAGE}-everything_${VERSION}_${ARCH}.iso
 
@@ -544,7 +572,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: dnf install -y lorax pykickstart curl awscli2
+        run: dnf install -y lorax pykickstart curl awscli2 isomd5sum
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -572,6 +600,7 @@ jobs:
           ISO_CMDLINE_APPEND: ${{ inputs.iso-cmdline-append }}
           ISO_CMDLINE_REMOVE: ${{ inputs.iso-cmdline-remove }}
           ISO_GRUB_REPLACEMENTS: ${{ inputs.iso-grub-replacements }}
+          ISO_GRUB_FILE: ${{ inputs.iso-grub-file }}
         run: |
           # Build dynamic mkksiso arg array from customization inputs.
           # Each input is optional; empty values contribute no flag.
@@ -579,8 +608,19 @@ jobs:
           [ -n "$ISO_VOLID" ] && MKKSISO_ARGS+=(-V "$ISO_VOLID")
           [ -n "$ISO_CMDLINE_APPEND" ] && MKKSISO_ARGS+=(-c "$ISO_CMDLINE_APPEND")
           [ -n "$ISO_CMDLINE_REMOVE" ] && MKKSISO_ARGS+=(-r "$ISO_CMDLINE_REMOVE")
-          # Multiline FROM|TO replacements — one pair per non-empty line
-          if [ -n "$ISO_GRUB_REPLACEMENTS" ]; then
+
+          # Custom grub.cfg — full file replacement via overlay.
+          # Takes precedence over iso-grub-replacements (string subst).
+          # mkksiso --add overlays a directory onto the ISO root,
+          # preserving subdirectory structure. EFI/BOOT/grub.cfg in
+          # the overlay replaces Fedora's default grub.cfg.
+          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
+            mkdir -p /tmp/grub-overlay/EFI/BOOT
+            cp "$ISO_GRUB_FILE" /tmp/grub-overlay/EFI/BOOT/grub.cfg
+            MKKSISO_ARGS+=(--add /tmp/grub-overlay)
+            echo "Using custom grub.cfg from $ISO_GRUB_FILE"
+          elif [ -n "$ISO_GRUB_REPLACEMENTS" ]; then
+            # Fallback: string replacement if no custom file provided
             while IFS='|' read -r from to; do
               [ -z "$from" ] && continue
               MKKSISO_ARGS+=(-R "$from" "$to")
@@ -589,10 +629,34 @@ jobs:
 
           echo "mkksiso extra args: ${MKKSISO_ARGS[*]}"
 
-          mkksiso "${MKKSISO_ARGS[@]}" \
+          retry_if_unreachable() {
+            local max_attempts=3 backoff=30 attempt=1 logfile
+            logfile=$(mktemp)
+            while [ "$attempt" -le "$max_attempts" ]; do
+              if "$@" 2>&1 | tee "$logfile"; then
+                rm -f "$logfile"; return 0
+              fi
+              if grep -qiE 'curl error \(([67]|28)\)|could not connect|connection refused|timed out|all mirrors were tried|network is unreachable|name or service not known|failed to connect.*port' "$logfile"; then
+                echo "::warning::Network error on attempt $attempt/$max_attempts, retrying in ${backoff}s..."
+                sleep "$backoff"
+                attempt=$((attempt + 1))
+              else
+                echo "::error::Non-network build error — not retrying"
+                rm -f "$logfile"; return 1
+              fi
+            done
+            echo "::error::Network error persisted after $max_attempts attempts"
+            rm -f "$logfile"; return 1
+          }
+
+          retry_if_unreachable mkksiso "${MKKSISO_ARGS[@]}" \
             --ks "${{ inputs.kickstart-file }}" \
             /tmp/fedora-netinst.iso \
             ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
+
+          # Embed checksum so "Verify media" (rd.live.check) works
+          # on the modified ISO. Must run AFTER mkksiso, BEFORE upload.
+          implantisomd5 ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
 
           ls -lah ${PACKAGE}-netinstall_${VERSION}_${ARCH}.iso
 
