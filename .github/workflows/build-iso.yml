@@ -516,16 +516,47 @@ jobs:
           # Post-mkksiso: patch grub.cfg (same approach as netinstall)
           if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
             echo "Patching grub.cfg in ISO with $ISO_GRUB_FILE"
+            # Fedora ISOs ship TWO grub.cfg files that we must BOTH
+            # replace to stop the "Install Fedora 43" menu from leaking
+            # through on one boot path while the xiboplayer menu shows
+            # on another:
+            #
+            #   /EFI/BOOT/grub.cfg      — Secure Boot UEFI path (shim
+            #                              → grubx64.efi reads this)
+            #   /boot/grub2/grub.cfg    — BIOS eltorito + some UEFI
+            #                              paths read this one
+            #
+            # Previously we only patched /EFI/BOOT/grub.cfg, so BIOS
+            # boots + certain UEFI setups saw the unmodified Fedora
+            # menu. Discover any additional grub.cfg paths at runtime
+            # and map them ALL in a single xorriso session (cheaper
+            # than running xorriso per file).
+            #
             # -outdev must be a FRESH file (xorriso refuses to write
             # to a non-empty file that differs from -indev). Write to
             # .tmp then mv back.
-            xorriso -indev "$ISO_OUT" \
-              -outdev "${ISO_OUT}.tmp" \
-              -boot_image any replay \
-              -map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
-              -end
-            mv "${ISO_OUT}.tmp" "$ISO_OUT"
-            echo "grub.cfg patched successfully"
+            mapfile -t GRUB_CFG_PATHS < <(
+              xorriso -indev "$ISO_OUT" \
+                -find / -name 'grub.cfg' 2>/dev/null \
+                | awk "/^'\\/.*grub\\.cfg'\$/ { gsub(/'/,\"\"); print }"
+            )
+            if [ "${#GRUB_CFG_PATHS[@]}" -eq 0 ]; then
+              echo "WARNING: no grub.cfg paths found in $ISO_OUT — skipping patch"
+            else
+              echo "Found ${#GRUB_CFG_PATHS[@]} grub.cfg path(s):"
+              printf '  - %s\n' "${GRUB_CFG_PATHS[@]}"
+              XORRISO_MAPS=()
+              for path in "${GRUB_CFG_PATHS[@]}"; do
+                XORRISO_MAPS+=(-map "$ISO_GRUB_FILE" "$path")
+              done
+              xorriso -indev "$ISO_OUT" \
+                -outdev "${ISO_OUT}.tmp" \
+                -boot_image any replay \
+                "${XORRISO_MAPS[@]}" \
+                -end
+              mv "${ISO_OUT}.tmp" "$ISO_OUT"
+              echo "grub.cfg patched successfully at ${#GRUB_CFG_PATHS[@]} location(s)"
+            fi
           fi
 
           implantisomd5 --force "$ISO_OUT"
@@ -665,16 +696,47 @@ jobs:
           # file in a bootable ISO without breaking boot.
           if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
             echo "Patching grub.cfg in ISO with $ISO_GRUB_FILE"
+            # Fedora ISOs ship TWO grub.cfg files that we must BOTH
+            # replace to stop the "Install Fedora 43" menu from leaking
+            # through on one boot path while the xiboplayer menu shows
+            # on another:
+            #
+            #   /EFI/BOOT/grub.cfg      — Secure Boot UEFI path (shim
+            #                              → grubx64.efi reads this)
+            #   /boot/grub2/grub.cfg    — BIOS eltorito + some UEFI
+            #                              paths read this one
+            #
+            # Previously we only patched /EFI/BOOT/grub.cfg, so BIOS
+            # boots + certain UEFI setups saw the unmodified Fedora
+            # menu. Discover any additional grub.cfg paths at runtime
+            # and map them ALL in a single xorriso session (cheaper
+            # than running xorriso per file).
+            #
             # -outdev must be a FRESH file (xorriso refuses to write
             # to a non-empty file that differs from -indev). Write to
             # .tmp then mv back.
-            xorriso -indev "$ISO_OUT" \
-              -outdev "${ISO_OUT}.tmp" \
-              -boot_image any replay \
-              -map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
-              -end
-            mv "${ISO_OUT}.tmp" "$ISO_OUT"
-            echo "grub.cfg patched successfully"
+            mapfile -t GRUB_CFG_PATHS < <(
+              xorriso -indev "$ISO_OUT" \
+                -find / -name 'grub.cfg' 2>/dev/null \
+                | awk "/^'\\/.*grub\\.cfg'\$/ { gsub(/'/,\"\"); print }"
+            )
+            if [ "${#GRUB_CFG_PATHS[@]}" -eq 0 ]; then
+              echo "WARNING: no grub.cfg paths found in $ISO_OUT — skipping patch"
+            else
+              echo "Found ${#GRUB_CFG_PATHS[@]} grub.cfg path(s):"
+              printf '  - %s\n' "${GRUB_CFG_PATHS[@]}"
+              XORRISO_MAPS=()
+              for path in "${GRUB_CFG_PATHS[@]}"; do
+                XORRISO_MAPS+=(-map "$ISO_GRUB_FILE" "$path")
+              done
+              xorriso -indev "$ISO_OUT" \
+                -outdev "${ISO_OUT}.tmp" \
+                -boot_image any replay \
+                "${XORRISO_MAPS[@]}" \
+                -end
+              mv "${ISO_OUT}.tmp" "$ISO_OUT"
+              echo "grub.cfg patched successfully at ${#GRUB_CFG_PATHS[@]} location(s)"
+            fi
           fi
 
           # Embed checksum so "Verify media" (rd.live.check) works
