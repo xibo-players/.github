@@ -531,6 +531,26 @@ jobs:
             /tmp/fedora-netinst.iso \
             "$ISO_OUT"
 
+          # Post-patch grub.cfg — our --add overlay is OVERWRITTEN by
+          # mkksiso's internal EditGrub2/RebuildEFIBoot step, so we must
+          # re-apply afterwards. `-boot_image any replay` inherits every
+          # El Torito catalog entry, MBR/GPT table and appended partition
+          # (incl. efiboot.img) from the input ISO. Only the two grub.cfg
+          # files are substituted. This avoids the #146 regression our
+          # previous plain `xorriso -map` pass caused by dropping the
+          # `-append_partition 2 efiboot.img` metadata.
+          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
+            mv "$ISO_OUT" "${ISO_OUT}.pre-grub"
+            xorriso \
+              -indev "${ISO_OUT}.pre-grub" \
+              -outdev "$ISO_OUT" \
+              -boot_image any replay \
+              -map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
+              -map "$ISO_GRUB_FILE" /boot/grub2/grub.cfg \
+              --
+            rm -f "${ISO_OUT}.pre-grub"
+          fi
+
           implantisomd5 --force "$ISO_OUT"
           ls -lah "$ISO_OUT"
 
@@ -673,8 +693,30 @@ jobs:
             /tmp/fedora-netinst.iso \
             "$ISO_OUT"
 
+          # Post-patch grub.cfg — our --add overlay is OVERWRITTEN by
+          # mkksiso's internal EditGrub2/RebuildEFIBoot step, so we must
+          # re-apply afterwards. `-boot_image any replay` inherits every
+          # El Torito catalog entry, MBR/GPT table and appended partition
+          # (incl. efiboot.img) from the input ISO. Only the two grub.cfg
+          # files are substituted. This avoids the #146 regression our
+          # previous plain `xorriso -map` pass caused by dropping the
+          # `-append_partition 2 efiboot.img` metadata.
+          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
+            mv "$ISO_OUT" "${ISO_OUT}.pre-grub"
+            xorriso \
+              -indev "${ISO_OUT}.pre-grub" \
+              -outdev "$ISO_OUT" \
+              -boot_image any replay \
+              -map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
+              -map "$ISO_GRUB_FILE" /boot/grub2/grub.cfg \
+              --
+            rm -f "${ISO_OUT}.pre-grub"
+          fi
+
           # Embed checksum so "Verify media" (rd.live.check) works
           # on the modified ISO. --force overwrites Fedora's stale checksum.
+          # Runs AFTER the xorriso post-patch so the stored checksum
+          # reflects the final file layout (with our grub.cfg).
           implantisomd5 --force "$ISO_OUT"
 
           ls -lah "$ISO_OUT"
