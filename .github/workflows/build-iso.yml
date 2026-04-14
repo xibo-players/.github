@@ -58,7 +58,7 @@ on:
       iso-grub-file:
         type: string
         default: ''
-        description: 'Path to a custom grub.cfg file (relative to repo root) that REPLACES Fedora''s default grub.cfg in the ISO. Injected via mkksiso --add as an EFI/BOOT/grub.cfg overlay. Takes precedence over iso-grub-replacements. mkksiso --ks still adds inst.ks= to each linuxefi line after the overlay.'
+        description: 'Path to a custom grub.cfg file (relative to repo root) that REPLACES Fedora''s default grub.cfg in the ISO. Staged into an overlay dir and injected via mkksiso --add at BOTH /EFI/BOOT/grub.cfg (UEFI) and /boot/grub2/grub.cfg (BIOS) so every boot path lands on the same menu. Takes precedence over iso-grub-replacements. The custom grub.cfg MUST include its own `inst.ks=hd:LABEL=<volid>:/<basename>.ks` entries on every linux line — mkksiso''s automatic inst.ks= injection only applies to the edited Fedora grub.cfg, not to our overlay.'
       skip-preflight:
         type: boolean
         default: false
@@ -472,6 +472,24 @@ jobs:
           mkdir -p /tmp/iso-extra/local-repo
           cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
 
+          # Overlay the caller's grub.cfg at BOTH the UEFI and BIOS paths
+          # via mkksiso --add. mkksiso's internal xorriso invocation
+          # applies overlay files via `-map` AFTER its own `-update` of
+          # the edited Fedora grub.cfg, so our file wins at both targets.
+          # Previously we ran a SEPARATE xorriso pass after mkksiso to do
+          # the same thing, but that second pass lost the
+          # `-append_partition 2 efiboot.img` GPT-partition registration
+          # mkksiso set up, breaking UEFI boot on some VM firmwares
+          # (reported by 0x0, xibo-players/xiboplayer-kiosk#146). Using
+          # --add keeps everything in one xorriso invocation — boot
+          # metadata preserved end-to-end.
+          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
+            mkdir -p /tmp/iso-extra/EFI/BOOT /tmp/iso-extra/boot/grub2
+            cp "$ISO_GRUB_FILE" /tmp/iso-extra/EFI/BOOT/grub.cfg
+            cp "$ISO_GRUB_FILE" /tmp/iso-extra/boot/grub2/grub.cfg
+            echo "grub.cfg overlay staged at /tmp/iso-extra/EFI/BOOT/grub.cfg + /tmp/iso-extra/boot/grub2/grub.cfg"
+          fi
+
           MKKSISO_ARGS=()
           [ -n "$ISO_VOLID" ] && MKKSISO_ARGS+=(-V "$ISO_VOLID")
           [ -n "$ISO_CMDLINE_APPEND" ] && MKKSISO_ARGS+=(-c "$ISO_CMDLINE_APPEND")
@@ -512,52 +530,6 @@ jobs:
             --add /tmp/iso-extra \
             /tmp/fedora-netinst.iso \
             "$ISO_OUT"
-
-          # Post-mkksiso: patch grub.cfg (same approach as netinstall)
-          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
-            echo "Patching grub.cfg in ISO with $ISO_GRUB_FILE"
-            # Fedora ISOs ship TWO grub.cfg files that we must BOTH
-            # replace to stop the "Install Fedora 43" menu from leaking
-            # through on one boot path while the xiboplayer menu shows
-            # on another:
-            #
-            #   /EFI/BOOT/grub.cfg      — Secure Boot UEFI path (shim
-            #                              → grubx64.efi reads this)
-            #   /boot/grub2/grub.cfg    — BIOS eltorito + some UEFI
-            #                              paths read this one
-            #
-            # Previously we only patched /EFI/BOOT/grub.cfg, so BIOS
-            # boots + certain UEFI setups saw the unmodified Fedora
-            # menu. Discover any additional grub.cfg paths at runtime
-            # and map them ALL in a single xorriso session (cheaper
-            # than running xorriso per file).
-            #
-            # -outdev must be a FRESH file (xorriso refuses to write
-            # to a non-empty file that differs from -indev). Write to
-            # .tmp then mv back.
-            mapfile -t GRUB_CFG_PATHS < <(
-              xorriso -indev "$ISO_OUT" \
-                -find / -name 'grub.cfg' 2>/dev/null \
-                | awk "/^'\\/.*grub\\.cfg'\$/ { gsub(/'/,\"\"); print }"
-            )
-            if [ "${#GRUB_CFG_PATHS[@]}" -eq 0 ]; then
-              echo "WARNING: no grub.cfg paths found in $ISO_OUT — skipping patch"
-            else
-              echo "Found ${#GRUB_CFG_PATHS[@]} grub.cfg path(s):"
-              printf '  - %s\n' "${GRUB_CFG_PATHS[@]}"
-              XORRISO_MAPS=()
-              for path in "${GRUB_CFG_PATHS[@]}"; do
-                XORRISO_MAPS+=(-map "$ISO_GRUB_FILE" "$path")
-              done
-              xorriso -indev "$ISO_OUT" \
-                -outdev "${ISO_OUT}.tmp" \
-                -boot_image any replay \
-                "${XORRISO_MAPS[@]}" \
-                -end
-              mv "${ISO_OUT}.tmp" "$ISO_OUT"
-              echo "grub.cfg patched successfully at ${#GRUB_CFG_PATHS[@]} location(s)"
-            fi
-          fi
 
           implantisomd5 --force "$ISO_OUT"
           ls -lah "$ISO_OUT"
@@ -655,6 +627,23 @@ jobs:
             done <<< "$ISO_GRUB_REPLACEMENTS"
           fi
 
+          # Custom grub.cfg — overlay via mkksiso --add at BOTH the UEFI
+          # (/EFI/BOOT) and BIOS (/boot/grub2) paths so either boot mode
+          # lands on the caller's menu. mkksiso's internal xorriso `-map`
+          # step runs AFTER its `-update` of the edited Fedora grub.cfg,
+          # so our overlay file wins. Previously we ran a second xorriso
+          # pass after mkksiso to do the same thing, but that pass lost
+          # the `-append_partition 2 efiboot.img` GPT-partition
+          # registration mkksiso set up, breaking UEFI boot on some VM
+          # firmwares (xibo-players/xiboplayer-kiosk#146).
+          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
+            mkdir -p /tmp/grub-overlay/EFI/BOOT /tmp/grub-overlay/boot/grub2
+            cp "$ISO_GRUB_FILE" /tmp/grub-overlay/EFI/BOOT/grub.cfg
+            cp "$ISO_GRUB_FILE" /tmp/grub-overlay/boot/grub2/grub.cfg
+            MKKSISO_ARGS+=(--add /tmp/grub-overlay)
+            echo "grub.cfg overlay staged at /tmp/grub-overlay/EFI/BOOT/grub.cfg + /tmp/grub-overlay/boot/grub2/grub.cfg"
+          fi
+
           echo "mkksiso extra args: ${MKKSISO_ARGS[*]}"
 
           retry_if_unreachable() {
@@ -683,61 +672,6 @@ jobs:
             --ks "${{ inputs.kickstart-file }}" \
             /tmp/fedora-netinst.iso \
             "$ISO_OUT"
-
-          # Post-mkksiso: replace grub.cfg with our custom version.
-          # mkksiso --add overlay doesn't work because mkksiso's own
-          # grub.cfg processing runs AFTER the overlay and overwrites
-          # our file. So we patch the finished ISO using xorriso.
-          #
-          # -boot_image any replay preserves ALL boot structures
-          # (UEFI shim chain + BIOS isolinux). -map replaces the
-          # single file. Per Debian RepackBootableISO wiki + xorriso
-          # man page, this is the documented way to patch a single
-          # file in a bootable ISO without breaking boot.
-          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
-            echo "Patching grub.cfg in ISO with $ISO_GRUB_FILE"
-            # Fedora ISOs ship TWO grub.cfg files that we must BOTH
-            # replace to stop the "Install Fedora 43" menu from leaking
-            # through on one boot path while the xiboplayer menu shows
-            # on another:
-            #
-            #   /EFI/BOOT/grub.cfg      — Secure Boot UEFI path (shim
-            #                              → grubx64.efi reads this)
-            #   /boot/grub2/grub.cfg    — BIOS eltorito + some UEFI
-            #                              paths read this one
-            #
-            # Previously we only patched /EFI/BOOT/grub.cfg, so BIOS
-            # boots + certain UEFI setups saw the unmodified Fedora
-            # menu. Discover any additional grub.cfg paths at runtime
-            # and map them ALL in a single xorriso session (cheaper
-            # than running xorriso per file).
-            #
-            # -outdev must be a FRESH file (xorriso refuses to write
-            # to a non-empty file that differs from -indev). Write to
-            # .tmp then mv back.
-            mapfile -t GRUB_CFG_PATHS < <(
-              xorriso -indev "$ISO_OUT" \
-                -find / -name 'grub.cfg' 2>/dev/null \
-                | awk "/^'\\/.*grub\\.cfg'\$/ { gsub(/'/,\"\"); print }"
-            )
-            if [ "${#GRUB_CFG_PATHS[@]}" -eq 0 ]; then
-              echo "WARNING: no grub.cfg paths found in $ISO_OUT — skipping patch"
-            else
-              echo "Found ${#GRUB_CFG_PATHS[@]} grub.cfg path(s):"
-              printf '  - %s\n' "${GRUB_CFG_PATHS[@]}"
-              XORRISO_MAPS=()
-              for path in "${GRUB_CFG_PATHS[@]}"; do
-                XORRISO_MAPS+=(-map "$ISO_GRUB_FILE" "$path")
-              done
-              xorriso -indev "$ISO_OUT" \
-                -outdev "${ISO_OUT}.tmp" \
-                -boot_image any replay \
-                "${XORRISO_MAPS[@]}" \
-                -end
-              mv "${ISO_OUT}.tmp" "$ISO_OUT"
-              echo "grub.cfg patched successfully at ${#GRUB_CFG_PATHS[@]} location(s)"
-            fi
-          fi
 
           # Embed checksum so "Verify media" (rd.live.check) works
           # on the modified ISO. --force overwrites Fedora's stale checksum.
