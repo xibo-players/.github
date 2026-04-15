@@ -295,9 +295,21 @@ jobs:
           mv *.raw ${PACKAGE}_${VERSION}_${ARCH}.raw 2>/dev/null || true
 
           if [ -f ${PACKAGE}_${VERSION}_${ARCH}.raw ]; then
+            # Grow the raw image to 16 GiB BEFORE qcow2 conversion and
+            # fix the GPT backup-header position on the raw itself.
+            # If we grow the qcow2 after conversion (old approach), the
+            # GPT backup header stays at the OLD end-of-disk, which
+            # makes OVMF refuse to boot ("No bootable option or device
+            # was found" despite a valid ESP). Fixing on raw is cheap
+            # (truncate + sgdisk) and the subsequent qemu-img convert -c
+            # re-compresses the unused tail to near-zero.
+            dnf install -y gdisk 2>/dev/null || :
+            truncate -s 16G ${PACKAGE}_${VERSION}_${ARCH}.raw
+            sgdisk --move-second-header ${PACKAGE}_${VERSION}_${ARCH}.raw
+
             qemu-img convert -f raw -O qcow2 -c \
               ${PACKAGE}_${VERSION}_${ARCH}.raw ${PACKAGE}_${VERSION}_${ARCH}.qcow2
-            qemu-img resize ${PACKAGE}_${VERSION}_${ARCH}.qcow2 16G
+
             xz -T0 -9 ${PACKAGE}_${VERSION}_${ARCH}.raw
           fi
 
