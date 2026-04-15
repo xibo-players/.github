@@ -847,7 +847,6 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           RPM_GPG_KEY: ${{ secrets.RPM_GPG_KEY }}
-          RPM_GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
           RPM_GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
           PACKAGE: ${{ inputs.package-name }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -877,7 +876,7 @@ jobs:
 
           # GPG-sign SHA256SUMS so operators can verify provenance.
           # Uses the SAME key + passphrase mechanism as build-rpm.yml:
-          #   - RPM_GPG_KEY is base64-encoded (must decode before import)
+          #   - RPM_GPG_KEY holds raw ASCII armor (import directly)
           #   - RPM_GPG_PASSPHRASE may be empty (key with no passphrase)
           #     or set at org/repo level
           #   - Custom pinentry-ci serves the passphrase non-interactively
@@ -886,7 +885,11 @@ jobs:
           # If key/passphrase aren't available (test builds, forks),
           # signing is skipped gracefully — checksums still upload.
           if [ -n "$RPM_GPG_KEY" ]; then
-            echo "$RPM_GPG_KEY" | base64 -d | gpg --batch --import 2>&1 || true
+            printf '%s\n' "$RPM_GPG_KEY" | gpg --batch --import 2>&1 || true
+            # Derive fingerprint from the imported key (single source of
+            # truth, no separate RPM_GPG_KEY_ID secret).
+            GPG_KEY_ID=$(gpg --list-secret-keys --with-colons \
+              | awk -F: '/^fpr:/ {print $10; exit}')
 
             # Create the same pinentry-ci that build-rpm.yml uses
             printf '%s' "$RPM_GPG_PASSPHRASE" > /tmp/.gpg-passphrase
@@ -909,7 +912,7 @@ jobs:
             echo "pinentry-program /usr/local/bin/pinentry-ci" > "$GPG_AGENT_CONF"
 
             if gpg --batch --yes --detach-sign --armor \
-                ${RPM_GPG_KEY_ID:+--default-key "$RPM_GPG_KEY_ID"} \
+                ${GPG_KEY_ID:+--default-key "$GPG_KEY_ID"} \
                 /tmp/checksums/SHA256SUMS 2>&1; then
               echo "GPG signature: SHA256SUMS.asc created"
             else
