@@ -30,7 +30,6 @@ jobs:
         env:
           GPG_KEY: ${{ secrets.RPM_GPG_KEY }}
           GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
-          GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
         run: |
           set -euo pipefail
 
@@ -54,11 +53,6 @@ jobs:
           fi
           if [ "$IMPORTED_FP" != "$EXPECTED_FP" ]; then
             echo "::error::RPM_GPG_KEY fingerprint $IMPORTED_FP does not match expected $EXPECTED_FP"
-            exit 1
-          fi
-
-          if [ -n "${GPG_KEY_ID:-}" ] && ! printf '%s' "$IMPORTED_FP" | grep -qi "${GPG_KEY_ID#0x}$"; then
-            echo "::error::RPM_GPG_KEY_ID secret does not reference the imported key"
             exit 1
           fi
 

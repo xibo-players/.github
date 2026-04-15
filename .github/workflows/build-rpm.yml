@@ -60,9 +60,6 @@ on:
       RPM_GPG_PASSPHRASE:
         required: false
         description: 'Passphrase for the GPG key'
-      RPM_GPG_KEY_ID:
-        required: false
-        description: 'GPG key ID for signing (e.g. name or email)'
       PAGES_TOKEN:
         required: false
         description: 'PAT with contents:write on xibo-players.github.io for central repo publishing'
@@ -300,15 +297,24 @@ jobs:
         env:
           GPG_KEY: ${{ secrets.RPM_GPG_KEY }}
           GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
-          GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
         shell: bash
         run: |
           dnf install -y rpm-sign gnupg2 pinentry
 
           # Import GPG private key. Secret stores raw ASCII armor
           # (output of `gpg --armor --export-secret-keys`) — pipe directly
-          # to gpg, no base64 layer. See #xxx / verify-signing-keys.yml.
+          # to gpg, no base64 layer.
           printf '%s\n' "$GPG_KEY" | gpg --batch --import
+
+          # Derive fingerprint from the imported key — single source of
+          # truth, no separate RPM_GPG_KEY_ID secret that can drift.
+          GPG_KEY_ID=$(gpg --list-secret-keys --with-colons \
+            | awk -F: '/^fpr:/ {print $10; exit}')
+          if [ -z "$GPG_KEY_ID" ]; then
+            echo "::error::No secret key imported from RPM_GPG_KEY"
+            exit 1
+          fi
+          echo "Signing with key $GPG_KEY_ID"
 
           # Create a custom pinentry that serves the passphrase non-interactively.
           # RPM 6.0 (Fedora 43) ignores %__gpg_sign_cmd macro overrides and
