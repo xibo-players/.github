@@ -305,9 +305,10 @@ jobs:
         run: |
           dnf install -y rpm-sign gnupg2 pinentry
 
-          # Import GPG private key
-          # Secret must be base64-encoded: base64 -w0 < key.asc | gh secret set ...
-          echo "$GPG_KEY" | base64 -d | gpg --batch --import
+          # Import GPG private key. Secret stores raw ASCII armor
+          # (output of `gpg --armor --export-secret-keys`) — pipe directly
+          # to gpg, no base64 layer. See #xxx / verify-signing-keys.yml.
+          printf '%s\n' "$GPG_KEY" | gpg --batch --import
 
           # Create a custom pinentry that serves the passphrase non-interactively.
           # RPM 6.0 (Fedora 43) ignores %__gpg_sign_cmd macro overrides and
