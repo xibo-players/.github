@@ -27,14 +27,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Import + verify fingerprint + test-sign
+        # shell: bash {0} (not bash -eo pipefail) so diagnostic commands
+        # keep running past failed pipelines and we can see actual errors.
+        shell: bash {0}
         env:
           GPG_KEY: ${{ secrets.RPM_GPG_KEY }}
           GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
           GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
         run: |
-          # Intentionally NOT using set -e / pipefail here — diagnostics
-          # need to keep running past failed pipelines so we can see the
-          # actual state of the secret. Failures are surfaced explicitly.
+          # Without -e: failed command substitutions don't abort the script,
+          # so we can capture stderr + exit codes and report them.
 
           if [ -z "$GPG_KEY" ]; then
             echo "::error::RPM_GPG_KEY secret is empty or not accessible"
@@ -121,6 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Import + verify fingerprint + test-sign
+        shell: bash {0}
         env:
           GPG_KEY: ${{ secrets.DEB_GPG_KEY }}
           GPG_PASSPHRASE: ${{ secrets.DEB_GPG_PASSPHRASE }}
