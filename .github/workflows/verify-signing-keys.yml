@@ -39,9 +39,30 @@ jobs:
             exit 1
           fi
 
+          # Format diagnostics (safe — no key material leaked):
+          # - length lets us tell "passphrase pasted into key field" (short)
+          #   from "correct base64" (~5000 chars for ed25519 key)
+          # - first 6 chars identify the format: "LS0tLS1" = base64 of
+          #   "-----" (so the underlying IS armor); raw "-----" means
+          #   the secret stores unencoded armor (wrong — workflow expects
+          #   base64'd input)
+          echo "RPM_GPG_KEY length: ${#GPG_KEY}"
+          echo "RPM_GPG_KEY first 6 chars: '$(printf '%s' "$GPG_KEY" | head -c 6)'"
+          echo "  (expected: 'LS0tLS1' = base64 of '-----BEGIN')"
+          echo "  (if starts with '-----': secret holds raw armor, not base64'd)"
+          echo "  (if very short: wrong field — maybe passphrase pasted here)"
+
           # Fresh keyring
           export GNUPGHOME=$(mktemp -d)
           chmod 700 "$GNUPGHOME"
+
+          # Decode diagnostics: show decoded-size, first byte as hex.
+          # First byte of an OpenPGP packet is 0x85, 0x94, 0x95, 0xc6...
+          # If it's 0x2d (ASCII '-'), the input wasn't base64 of a packet.
+          DECODED_SIZE=$(echo "$GPG_KEY" | base64 -d 2>/dev/null | wc -c)
+          FIRST_BYTE=$(echo "$GPG_KEY" | base64 -d 2>/dev/null | head -c1 | xxd -p | head -c2 || echo "??")
+          echo "base64-decoded size: $DECODED_SIZE bytes"
+          echo "first decoded byte: 0x$FIRST_BYTE (OpenPGP expects 0x85/0x94/0x95/0xc6)"
 
           echo "$GPG_KEY" | base64 -d | gpg --batch --import
 
@@ -100,8 +121,17 @@ jobs:
             exit 1
           fi
 
+          echo "DEB_GPG_KEY length: ${#GPG_KEY}"
+          echo "DEB_GPG_KEY first 6 chars: '$(printf '%s' "$GPG_KEY" | head -c 6)'"
+          echo "  (expected: 'LS0tLS1' = base64 of '-----BEGIN')"
+
           export GNUPGHOME=$(mktemp -d)
           chmod 700 "$GNUPGHOME"
+
+          DECODED_SIZE=$(echo "$GPG_KEY" | base64 -d 2>/dev/null | wc -c)
+          FIRST_BYTE=$(echo "$GPG_KEY" | base64 -d 2>/dev/null | head -c1 | xxd -p | head -c2 || echo "??")
+          echo "base64-decoded size: $DECODED_SIZE bytes"
+          echo "first decoded byte: 0x$FIRST_BYTE (OpenPGP expects 0x85/0x94/0x95/0xc6)"
 
           echo "$GPG_KEY" | base64 -d | gpg --batch --import
 
