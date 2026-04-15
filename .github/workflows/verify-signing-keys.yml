@@ -32,50 +32,46 @@ jobs:
           GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
           GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
         run: |
-          set -euo pipefail
+          # Intentionally NOT using set -e / pipefail here — diagnostics
+          # need to keep running past failed pipelines so we can see the
+          # actual state of the secret. Failures are surfaced explicitly.
 
           if [ -z "$GPG_KEY" ]; then
             echo "::error::RPM_GPG_KEY secret is empty or not accessible"
             exit 1
           fi
 
-          # Format diagnostics (safe — no key material leaked):
-          # - length lets us tell "passphrase pasted into key field" (short)
-          #   from "correct base64" (~5000 chars for ed25519 key)
-          # - first 6 chars identify the format: "LS0tLS1" = base64 of
-          #   "-----" (so the underlying IS armor); raw "-----" means
-          #   the secret stores unencoded armor (wrong — workflow expects
-          #   base64'd input)
           echo "RPM_GPG_KEY length: ${#GPG_KEY}"
           echo "RPM_GPG_KEY first 6 chars: '$(printf '%s' "$GPG_KEY" | head -c 6)'"
-          echo "  (expected: 'LS0tLS1' = base64 of '-----BEGIN')"
-          echo "  (if starts with '-----': secret holds raw armor, not base64'd)"
-          echo "  (if very short: wrong field — maybe passphrase pasted here)"
+          echo "RPM_GPG_KEY last 6 chars:  '$(printf '%s' "$GPG_KEY" | tail -c 6)'"
+          echo "  (base64 of '-----BEGIN' starts 'LS0tLS1CRUdJTi')"
+          echo "  (raw armor starts '-----BEGIN PGP')"
 
-          # Fresh keyring
           export GNUPGHOME=$(mktemp -d)
           chmod 700 "$GNUPGHOME"
 
-          # Decode diagnostics: show decoded-size, first byte as hex.
-          # First byte of an OpenPGP packet is 0x85, 0x94, 0x95, 0xc6...
-          # If it's 0x2d (ASCII '-'), the input wasn't base64 of a packet.
-          DECODED_SIZE=$(echo "$GPG_KEY" | base64 -d 2>/dev/null | wc -c)
-          FIRST_BYTE=$(echo "$GPG_KEY" | base64 -d 2>/dev/null | head -c1 | xxd -p | head -c2 || echo "??")
-          echo "base64-decoded size: $DECODED_SIZE bytes"
-          echo "first decoded byte: 0x$FIRST_BYTE (OpenPGP expects 0x85/0x94/0x95/0xc6)"
+          # Try raw ASCII armor first — the native gpg export format.
+          # Capture stderr so we can see the actual gpg parse error.
+          echo "--- attempting import as RAW ASCII armor ---"
+          RAW_STDERR=$(printf '%s\n' "$GPG_KEY" | gpg --batch --import 2>&1)
+          RAW_RC=$?
+          echo "$RAW_STDERR"
+          echo "raw-import exit code: $RAW_RC"
 
-          # Accept either raw ASCII armor OR base64-wrapped armor.
-          # Raw armor ("-----BEGIN PGP...") is the native gpg format and
-          # GitHub Actions env vars handle multi-line values fine — base64
-          # was historical cargo-cult. Try raw first; if gpg rejects it,
-          # fall back to base64 decode.
-          if printf '%s\n' "$GPG_KEY" | gpg --batch --import 2>/dev/null; then
-            echo "::notice::Imported as raw ASCII armor"
-          elif printf '%s\n' "$GPG_KEY" | base64 -d 2>/dev/null | gpg --batch --import 2>/dev/null; then
-            echo "::notice::Imported as base64'd armor (consider dropping the base64 layer)"
+          # If raw failed, try base64 decode first
+          if [ "$RAW_RC" -ne 0 ]; then
+            echo "--- attempting import as BASE64 of armor ---"
+            B64_STDERR=$(printf '%s\n' "$GPG_KEY" | base64 -d 2>&1 | gpg --batch --import 2>&1)
+            B64_RC=$?
+            echo "$B64_STDERR"
+            echo "base64-import exit code: $B64_RC"
+            if [ "$B64_RC" -ne 0 ]; then
+              echo "::error::RPM_GPG_KEY is neither valid raw ASCII armor nor valid base64 of armor"
+              exit 1
+            fi
+            echo "::notice::Imported as base64-wrapped armor"
           else
-            echo "::error::Secret is neither valid raw ASCII armor nor valid base64 of armor"
-            exit 1
+            echo "::notice::Imported as raw ASCII armor (base64 layer was unnecessary — refactor PR will drop it)"
           fi
 
           echo "::group::Imported secret keys"
@@ -85,14 +81,17 @@ jobs:
           IMPORTED_FP=$(gpg --list-secret-keys --with-colons \
             | awk -F: '/^fpr:/ {print $10; exit}')
 
-          echo "Imported primary fingerprint: $IMPORTED_FP"
+          echo "Imported primary fingerprint: ${IMPORTED_FP:-<none found>}"
           echo "Expected primary fingerprint: $EXPECTED_FP"
-          echo "RPM_GPG_KEY_ID secret value:   $GPG_KEY_ID"
+
+          if [ -z "$IMPORTED_FP" ]; then
+            echo "::error::No secret key imported — check the secret holds an ASCII-armored PRIVATE key"
+            echo "::error::(a PUBLIC key export is shorter; gpg --armor --export-SECRET-keys is required)"
+            exit 1
+          fi
 
           if [ "$IMPORTED_FP" != "$EXPECTED_FP" ]; then
             echo "::error::RPM_GPG_KEY fingerprint MISMATCH"
-            echo "::error::  imported: $IMPORTED_FP"
-            echo "::error::  expected: $EXPECTED_FP"
             exit 1
           fi
           echo "::notice::RPM_GPG_KEY fingerprint matches the org key"
@@ -126,8 +125,6 @@ jobs:
           GPG_KEY: ${{ secrets.DEB_GPG_KEY }}
           GPG_PASSPHRASE: ${{ secrets.DEB_GPG_PASSPHRASE }}
         run: |
-          set -euo pipefail
-
           if [ -z "$GPG_KEY" ]; then
             echo "::error::DEB_GPG_KEY secret is empty or not accessible"
             exit 1
@@ -135,28 +132,30 @@ jobs:
 
           echo "DEB_GPG_KEY length: ${#GPG_KEY}"
           echo "DEB_GPG_KEY first 6 chars: '$(printf '%s' "$GPG_KEY" | head -c 6)'"
-          echo "  (expected: 'LS0tLS1' = base64 of '-----BEGIN')"
+          echo "DEB_GPG_KEY last 6 chars:  '$(printf '%s' "$GPG_KEY" | tail -c 6)'"
 
           export GNUPGHOME=$(mktemp -d)
           chmod 700 "$GNUPGHOME"
 
-          DECODED_SIZE=$(echo "$GPG_KEY" | base64 -d 2>/dev/null | wc -c)
-          FIRST_BYTE=$(echo "$GPG_KEY" | base64 -d 2>/dev/null | head -c1 | xxd -p | head -c2 || echo "??")
-          echo "base64-decoded size: $DECODED_SIZE bytes"
-          echo "first decoded byte: 0x$FIRST_BYTE (OpenPGP expects 0x85/0x94/0x95/0xc6)"
+          echo "--- attempting import as RAW ASCII armor ---"
+          RAW_STDERR=$(printf '%s\n' "$GPG_KEY" | gpg --batch --import 2>&1)
+          RAW_RC=$?
+          echo "$RAW_STDERR"
+          echo "raw-import exit code: $RAW_RC"
 
-          # Accept either raw ASCII armor OR base64-wrapped armor.
-          # Raw armor ("-----BEGIN PGP...") is the native gpg format and
-          # GitHub Actions env vars handle multi-line values fine — base64
-          # was historical cargo-cult. Try raw first; if gpg rejects it,
-          # fall back to base64 decode.
-          if printf '%s\n' "$GPG_KEY" | gpg --batch --import 2>/dev/null; then
-            echo "::notice::Imported as raw ASCII armor"
-          elif printf '%s\n' "$GPG_KEY" | base64 -d 2>/dev/null | gpg --batch --import 2>/dev/null; then
-            echo "::notice::Imported as base64'd armor (consider dropping the base64 layer)"
+          if [ "$RAW_RC" -ne 0 ]; then
+            echo "--- attempting import as BASE64 of armor ---"
+            B64_STDERR=$(printf '%s\n' "$GPG_KEY" | base64 -d 2>&1 | gpg --batch --import 2>&1)
+            B64_RC=$?
+            echo "$B64_STDERR"
+            echo "base64-import exit code: $B64_RC"
+            if [ "$B64_RC" -ne 0 ]; then
+              echo "::error::DEB_GPG_KEY is neither valid raw ASCII armor nor valid base64 of armor"
+              exit 1
+            fi
+            echo "::notice::Imported as base64-wrapped armor"
           else
-            echo "::error::Secret is neither valid raw ASCII armor nor valid base64 of armor"
-            exit 1
+            echo "::notice::Imported as raw ASCII armor"
           fi
 
           echo "::group::Imported secret keys"
@@ -166,13 +165,16 @@ jobs:
           IMPORTED_FP=$(gpg --list-secret-keys --with-colons \
             | awk -F: '/^fpr:/ {print $10; exit}')
 
-          echo "Imported primary fingerprint: $IMPORTED_FP"
+          echo "Imported primary fingerprint: ${IMPORTED_FP:-<none found>}"
           echo "Expected primary fingerprint: $EXPECTED_FP"
+
+          if [ -z "$IMPORTED_FP" ]; then
+            echo "::error::No secret key imported — check the secret holds an ASCII-armored PRIVATE key (not public)"
+            exit 1
+          fi
 
           if [ "$IMPORTED_FP" != "$EXPECTED_FP" ]; then
             echo "::error::DEB_GPG_KEY fingerprint MISMATCH"
-            echo "::error::  imported: $IMPORTED_FP"
-            echo "::error::  expected: $EXPECTED_FP"
             exit 1
           fi
           echo "::notice::DEB_GPG_KEY fingerprint matches the org key"
