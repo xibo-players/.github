@@ -64,7 +64,19 @@ jobs:
           echo "base64-decoded size: $DECODED_SIZE bytes"
           echo "first decoded byte: 0x$FIRST_BYTE (OpenPGP expects 0x85/0x94/0x95/0xc6)"
 
-          echo "$GPG_KEY" | base64 -d | gpg --batch --import
+          # Accept either raw ASCII armor OR base64-wrapped armor.
+          # Raw armor ("-----BEGIN PGP...") is the native gpg format and
+          # GitHub Actions env vars handle multi-line values fine — base64
+          # was historical cargo-cult. Try raw first; if gpg rejects it,
+          # fall back to base64 decode.
+          if printf '%s\n' "$GPG_KEY" | gpg --batch --import 2>/dev/null; then
+            echo "::notice::Imported as raw ASCII armor"
+          elif printf '%s\n' "$GPG_KEY" | base64 -d 2>/dev/null | gpg --batch --import 2>/dev/null; then
+            echo "::notice::Imported as base64'd armor (consider dropping the base64 layer)"
+          else
+            echo "::error::Secret is neither valid raw ASCII armor nor valid base64 of armor"
+            exit 1
+          fi
 
           echo "::group::Imported secret keys"
           gpg --list-secret-keys --with-colons
@@ -133,7 +145,19 @@ jobs:
           echo "base64-decoded size: $DECODED_SIZE bytes"
           echo "first decoded byte: 0x$FIRST_BYTE (OpenPGP expects 0x85/0x94/0x95/0xc6)"
 
-          echo "$GPG_KEY" | base64 -d | gpg --batch --import
+          # Accept either raw ASCII armor OR base64-wrapped armor.
+          # Raw armor ("-----BEGIN PGP...") is the native gpg format and
+          # GitHub Actions env vars handle multi-line values fine — base64
+          # was historical cargo-cult. Try raw first; if gpg rejects it,
+          # fall back to base64 decode.
+          if printf '%s\n' "$GPG_KEY" | gpg --batch --import 2>/dev/null; then
+            echo "::notice::Imported as raw ASCII armor"
+          elif printf '%s\n' "$GPG_KEY" | base64 -d 2>/dev/null | gpg --batch --import 2>/dev/null; then
+            echo "::notice::Imported as base64'd armor (consider dropping the base64 layer)"
+          else
+            echo "::error::Secret is neither valid raw ASCII armor nor valid base64 of armor"
+            exit 1
+          fi
 
           echo "::group::Imported secret keys"
           gpg --list-secret-keys --with-colons
