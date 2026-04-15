@@ -543,19 +543,40 @@ jobs:
           # by dropping the `-append_partition 2 efiboot.img` metadata.
           if [ -n "$ISO_GRUB_FILE" ] || [ -n "$ISO_ISOLINUX_FILE" ]; then
             mv "$ISO_OUT" "${ISO_OUT}.pre-boot"
+
+            # libosinfo (GNOME Boxes, virt-install --os-variant=detect,
+            # virt-manager wizard) detects Fedora via /.treeinfo content —
+            # family/version/arch keys. mkksiso discards .treeinfo during
+            # its rebuild, leaving hosts unable to recognise our ISO as
+            # Fedora (forces users to pick OS manually). Extract it from
+            # the source Fedora ISO and stage a -map back in.
+            TREEINFO_TMP=$(mktemp --suffix=.treeinfo)
+            xorriso -indev /tmp/fedora-netinst.iso \
+              -osirrox on:auto_chmod_on \
+              -extract /.treeinfo "$TREEINFO_TMP" \
+              -- 2>/dev/null || :
+
             MAPS=()
+            # Fedora's grubx64.efi searches BOOT.conf FIRST then grub.cfg
+            # in /EFI/BOOT/. mkksiso writes its edited menu to BOTH, so
+            # we must -map our grub.cfg to BOTH or the UEFI boot lands
+            # on Fedora's stock menuentries via BOOT.conf.
             [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ] && \
               MAPS+=(-map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
+                    -map "$ISO_GRUB_FILE" /EFI/BOOT/BOOT.conf \
                     -map "$ISO_GRUB_FILE" /boot/grub2/grub.cfg)
             [ -n "$ISO_ISOLINUX_FILE" ] && [ -f "$ISO_ISOLINUX_FILE" ] && \
               MAPS+=(-map "$ISO_ISOLINUX_FILE" /isolinux/isolinux.cfg)
+            [ -s "$TREEINFO_TMP" ] && \
+              MAPS+=(-map "$TREEINFO_TMP" /.treeinfo)
+
             xorriso \
               -indev "${ISO_OUT}.pre-boot" \
               -outdev "$ISO_OUT" \
               -boot_image any replay \
               "${MAPS[@]}" \
               --
-            rm -f "${ISO_OUT}.pre-boot"
+            rm -f "${ISO_OUT}.pre-boot" "$TREEINFO_TMP"
           fi
 
           implantisomd5 --force "$ISO_OUT"
@@ -710,19 +731,40 @@ jobs:
           # -append_partition metadata).
           if [ -n "$ISO_GRUB_FILE" ] || [ -n "$ISO_ISOLINUX_FILE" ]; then
             mv "$ISO_OUT" "${ISO_OUT}.pre-boot"
+
+            # libosinfo (GNOME Boxes, virt-install --os-variant=detect,
+            # virt-manager wizard) detects Fedora via /.treeinfo content —
+            # family/version/arch keys. mkksiso discards .treeinfo during
+            # its rebuild, leaving hosts unable to recognise our ISO as
+            # Fedora (forces users to pick OS manually). Extract it from
+            # the source Fedora ISO and stage a -map back in.
+            TREEINFO_TMP=$(mktemp --suffix=.treeinfo)
+            xorriso -indev /tmp/fedora-netinst.iso \
+              -osirrox on:auto_chmod_on \
+              -extract /.treeinfo "$TREEINFO_TMP" \
+              -- 2>/dev/null || :
+
             MAPS=()
+            # Fedora's grubx64.efi searches BOOT.conf FIRST then grub.cfg
+            # in /EFI/BOOT/. mkksiso writes its edited menu to BOTH, so
+            # we must -map our grub.cfg to BOTH or the UEFI boot lands
+            # on Fedora's stock menuentries via BOOT.conf.
             [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ] && \
               MAPS+=(-map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
+                    -map "$ISO_GRUB_FILE" /EFI/BOOT/BOOT.conf \
                     -map "$ISO_GRUB_FILE" /boot/grub2/grub.cfg)
             [ -n "$ISO_ISOLINUX_FILE" ] && [ -f "$ISO_ISOLINUX_FILE" ] && \
               MAPS+=(-map "$ISO_ISOLINUX_FILE" /isolinux/isolinux.cfg)
+            [ -s "$TREEINFO_TMP" ] && \
+              MAPS+=(-map "$TREEINFO_TMP" /.treeinfo)
+
             xorriso \
               -indev "${ISO_OUT}.pre-boot" \
               -outdev "$ISO_OUT" \
               -boot_image any replay \
               "${MAPS[@]}" \
               --
-            rm -f "${ISO_OUT}.pre-boot"
+            rm -f "${ISO_OUT}.pre-boot" "$TREEINFO_TMP"
           fi
 
           # Embed checksum so "Verify media" (rd.live.check) works
