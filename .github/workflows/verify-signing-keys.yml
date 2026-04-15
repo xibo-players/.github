@@ -1,0 +1,131 @@
+name: Verify signing-key secrets
+# Dry-run diagnostic — imports RPM_GPG_KEY / DEB_GPG_KEY, reports the
+# fingerprint of the imported secret key, and confirms the passphrase
+# works via a throwaway signature. Does NOT publish or build anything.
+#
+# Purpose: catch exactly the bug where signing secrets hold the WRONG
+# key material (e.g. a maintainer's personal key instead of the org
+# packages@xiboplayer.org key). Run manually after rotating either
+# secret — failure surfaces the mismatch before the next release.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Expected primary-key fingerprint for the org signing key.
+  # Must match what xiboplayer-release RPM bundles at
+  # /etc/pki/rpm-gpg/RPM-GPG-KEY-xiboplayer, otherwise rpm/apt clients
+  # will reject signed packages as NOKEY.
+  EXPECTED_FP: 04A9179692E86CF11D103CBF5A30EA2BB69D32F2
+
+jobs:
+  verify-rpm:
+    name: RPM signing key
+    runs-on: ubuntu-latest
+    steps:
+      - name: Import + verify fingerprint + test-sign
+        env:
+          GPG_KEY: ${{ secrets.RPM_GPG_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.RPM_GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.RPM_GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$GPG_KEY" ]; then
+            echo "::error::RPM_GPG_KEY secret is empty or not accessible"
+            exit 1
+          fi
+
+          # Fresh keyring
+          export GNUPGHOME=$(mktemp -d)
+          chmod 700 "$GNUPGHOME"
+
+          echo "$GPG_KEY" | base64 -d | gpg --batch --import
+
+          echo "::group::Imported secret keys"
+          gpg --list-secret-keys --with-colons
+          echo "::endgroup::"
+
+          IMPORTED_FP=$(gpg --list-secret-keys --with-colons \
+            | awk -F: '/^fpr:/ {print $10; exit}')
+
+          echo "Imported primary fingerprint: $IMPORTED_FP"
+          echo "Expected primary fingerprint: $EXPECTED_FP"
+          echo "RPM_GPG_KEY_ID secret value:   $GPG_KEY_ID"
+
+          if [ "$IMPORTED_FP" != "$EXPECTED_FP" ]; then
+            echo "::error::RPM_GPG_KEY fingerprint MISMATCH"
+            echo "::error::  imported: $IMPORTED_FP"
+            echo "::error::  expected: $EXPECTED_FP"
+            exit 1
+          fi
+          echo "::notice::RPM_GPG_KEY fingerprint matches the org key"
+
+          # RPM_GPG_KEY_ID must reference the same key
+          if [ -n "$GPG_KEY_ID" ]; then
+            if ! printf '%s\n' "$IMPORTED_FP" | grep -qi "${GPG_KEY_ID#0x}$"; then
+              echo "::error::RPM_GPG_KEY_ID ($GPG_KEY_ID) does not match imported fingerprint suffix"
+              exit 1
+            fi
+            echo "::notice::RPM_GPG_KEY_ID references the same key as RPM_GPG_KEY"
+          else
+            echo "::warning::RPM_GPG_KEY_ID secret is not set (ok — will derive from imported key in refactor)"
+          fi
+
+          # Test passphrase with a throwaway signature — catches "wrong passphrase"
+          # before a real build chokes mid-transaction.
+          echo "test payload" > /tmp/verify.txt
+          echo "$GPG_PASSPHRASE" \
+            | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+                  --detach-sign --output /tmp/verify.sig /tmp/verify.txt
+          gpg --verify /tmp/verify.sig /tmp/verify.txt
+          echo "::notice::RPM_GPG_PASSPHRASE unlocks the key"
+
+  verify-deb:
+    name: DEB signing key
+    runs-on: ubuntu-latest
+    steps:
+      - name: Import + verify fingerprint + test-sign
+        env:
+          GPG_KEY: ${{ secrets.DEB_GPG_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.DEB_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$GPG_KEY" ]; then
+            echo "::error::DEB_GPG_KEY secret is empty or not accessible"
+            exit 1
+          fi
+
+          export GNUPGHOME=$(mktemp -d)
+          chmod 700 "$GNUPGHOME"
+
+          echo "$GPG_KEY" | base64 -d | gpg --batch --import
+
+          echo "::group::Imported secret keys"
+          gpg --list-secret-keys --with-colons
+          echo "::endgroup::"
+
+          IMPORTED_FP=$(gpg --list-secret-keys --with-colons \
+            | awk -F: '/^fpr:/ {print $10; exit}')
+
+          echo "Imported primary fingerprint: $IMPORTED_FP"
+          echo "Expected primary fingerprint: $EXPECTED_FP"
+
+          if [ "$IMPORTED_FP" != "$EXPECTED_FP" ]; then
+            echo "::error::DEB_GPG_KEY fingerprint MISMATCH"
+            echo "::error::  imported: $IMPORTED_FP"
+            echo "::error::  expected: $EXPECTED_FP"
+            exit 1
+          fi
+          echo "::notice::DEB_GPG_KEY fingerprint matches the org key"
+
+          echo "test payload" > /tmp/verify.txt
+          echo "$GPG_PASSPHRASE" \
+            | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+                  --clearsign --output /tmp/verify.asc /tmp/verify.txt
+          gpg --verify /tmp/verify.asc
+          echo "::notice::DEB_GPG_PASSPHRASE unlocks the key"
