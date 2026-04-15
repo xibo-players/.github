@@ -59,6 +59,10 @@ on:
         type: string
         default: ''
         description: 'Path to a custom grub.cfg file (relative to repo root) that REPLACES Fedora''s default grub.cfg in the ISO. Staged into an overlay dir and injected via mkksiso --add at BOTH /EFI/BOOT/grub.cfg (UEFI) and /boot/grub2/grub.cfg (BIOS) so every boot path lands on the same menu. Takes precedence over iso-grub-replacements. The custom grub.cfg MUST include its own `inst.ks=hd:LABEL=<volid>:/<basename>.ks` entries on every linux line — mkksiso''s automatic inst.ks= injection only applies to the edited Fedora grub.cfg, not to our overlay.'
+      iso-isolinux-file:
+        type: string
+        default: ''
+        description: 'Path to a custom isolinux.cfg (syslinux BIOS menu) that REPLACES Fedora''s default at /isolinux/isolinux.cfg in the ISO. Symmetric with iso-grub-file — covers BIOS-firmware guests (SeaBIOS via GNOME Boxes default, libvirt with BIOS loader, bare-metal CSM) that never read the UEFI grub.cfg overlay. Like iso-grub-file, the custom isolinux.cfg MUST include its own `inst.ks=hd:LABEL=<volid>:/<basename>.ks` tokens on every `append` line.'
       skip-preflight:
         type: boolean
         default: false
@@ -468,26 +472,24 @@ jobs:
           ISO_CMDLINE_REMOVE: ${{ inputs.iso-cmdline-remove }}
           ISO_GRUB_REPLACEMENTS: ${{ inputs.iso-grub-replacements }}
           ISO_GRUB_FILE: ${{ inputs.iso-grub-file }}
+          ISO_ISOLINUX_FILE: ${{ inputs.iso-isolinux-file }}
         run: |
           mkdir -p /tmp/iso-extra/local-repo
           cp -a /tmp/local-repo/* /tmp/iso-extra/local-repo/
 
-          # Overlay the caller's grub.cfg at BOTH the UEFI and BIOS paths
-          # via mkksiso --add. mkksiso's internal xorriso invocation
-          # applies overlay files via `-map` AFTER its own `-update` of
-          # the edited Fedora grub.cfg, so our file wins at both targets.
-          # Previously we ran a SEPARATE xorriso pass after mkksiso to do
-          # the same thing, but that second pass lost the
-          # `-append_partition 2 efiboot.img` GPT-partition registration
-          # mkksiso set up, breaking UEFI boot on some VM firmwares
-          # (reported by 0x0, xibo-players/xiboplayer-kiosk#146). Using
-          # --add keeps everything in one xorriso invocation — boot
-          # metadata preserved end-to-end.
+          # Overlay the caller's grub.cfg (UEFI + BIOS-grub2 paths) and
+          # isolinux.cfg (BIOS-syslinux path) via mkksiso --add. mkksiso's
+          # internal xorriso invocation applies overlay files via `-map`
+          # AFTER its own edits of the stock Fedora configs, so our files
+          # win at every boot target.
           if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
             mkdir -p /tmp/iso-extra/EFI/BOOT /tmp/iso-extra/boot/grub2
             cp "$ISO_GRUB_FILE" /tmp/iso-extra/EFI/BOOT/grub.cfg
             cp "$ISO_GRUB_FILE" /tmp/iso-extra/boot/grub2/grub.cfg
-            echo "grub.cfg overlay staged at /tmp/iso-extra/EFI/BOOT/grub.cfg + /tmp/iso-extra/boot/grub2/grub.cfg"
+          fi
+          if [ -n "$ISO_ISOLINUX_FILE" ] && [ -f "$ISO_ISOLINUX_FILE" ]; then
+            mkdir -p /tmp/iso-extra/isolinux
+            cp "$ISO_ISOLINUX_FILE" /tmp/iso-extra/isolinux/isolinux.cfg
           fi
 
           MKKSISO_ARGS=()
@@ -531,24 +533,29 @@ jobs:
             /tmp/fedora-netinst.iso \
             "$ISO_OUT"
 
-          # Post-patch grub.cfg — our --add overlay is OVERWRITTEN by
-          # mkksiso's internal EditGrub2/RebuildEFIBoot step, so we must
-          # re-apply afterwards. `-boot_image any replay` inherits every
-          # El Torito catalog entry, MBR/GPT table and appended partition
-          # (incl. efiboot.img) from the input ISO. Only the two grub.cfg
-          # files are substituted. This avoids the #146 regression our
-          # previous plain `xorriso -map` pass caused by dropping the
-          # `-append_partition 2 efiboot.img` metadata.
-          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
-            mv "$ISO_OUT" "${ISO_OUT}.pre-grub"
+          # Post-patch boot configs — our --add overlays are OVERWRITTEN
+          # by mkksiso's internal EditGrub2/RebuildEFIBoot step, so we
+          # must re-apply afterwards. `-boot_image any replay` inherits
+          # every El Torito catalog entry, MBR/GPT table and appended
+          # partition (incl. efiboot.img) from the input ISO. Only our
+          # boot-config files are substituted. This avoids the #146
+          # regression our previous plain `xorriso -map` pass caused
+          # by dropping the `-append_partition 2 efiboot.img` metadata.
+          if [ -n "$ISO_GRUB_FILE" ] || [ -n "$ISO_ISOLINUX_FILE" ]; then
+            mv "$ISO_OUT" "${ISO_OUT}.pre-boot"
+            MAPS=()
+            [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ] && \
+              MAPS+=(-map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
+                    -map "$ISO_GRUB_FILE" /boot/grub2/grub.cfg)
+            [ -n "$ISO_ISOLINUX_FILE" ] && [ -f "$ISO_ISOLINUX_FILE" ] && \
+              MAPS+=(-map "$ISO_ISOLINUX_FILE" /isolinux/isolinux.cfg)
             xorriso \
-              -indev "${ISO_OUT}.pre-grub" \
+              -indev "${ISO_OUT}.pre-boot" \
               -outdev "$ISO_OUT" \
               -boot_image any replay \
-              -map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
-              -map "$ISO_GRUB_FILE" /boot/grub2/grub.cfg \
+              "${MAPS[@]}" \
               --
-            rm -f "${ISO_OUT}.pre-grub"
+            rm -f "${ISO_OUT}.pre-boot"
           fi
 
           implantisomd5 --force "$ISO_OUT"
@@ -631,15 +638,13 @@ jobs:
           ISO_CMDLINE_REMOVE: ${{ inputs.iso-cmdline-remove }}
           ISO_GRUB_REPLACEMENTS: ${{ inputs.iso-grub-replacements }}
           ISO_GRUB_FILE: ${{ inputs.iso-grub-file }}
+          ISO_ISOLINUX_FILE: ${{ inputs.iso-isolinux-file }}
         run: |
-          # Build dynamic mkksiso arg array from customization inputs.
-          # Each input is optional; empty values contribute no flag.
           MKKSISO_ARGS=()
           [ -n "$ISO_VOLID" ] && MKKSISO_ARGS+=(-V "$ISO_VOLID")
           [ -n "$ISO_CMDLINE_APPEND" ] && MKKSISO_ARGS+=(-c "$ISO_CMDLINE_APPEND")
           [ -n "$ISO_CMDLINE_REMOVE" ] && MKKSISO_ARGS+=(-r "$ISO_CMDLINE_REMOVE")
 
-          # String replacements (fallback when no custom grub file)
           if [ -z "$ISO_GRUB_FILE" ] && [ -n "$ISO_GRUB_REPLACEMENTS" ]; then
             while IFS='|' read -r from to; do
               [ -z "$from" ] && continue
@@ -647,21 +652,23 @@ jobs:
             done <<< "$ISO_GRUB_REPLACEMENTS"
           fi
 
-          # Custom grub.cfg — overlay via mkksiso --add at BOTH the UEFI
-          # (/EFI/BOOT) and BIOS (/boot/grub2) paths so either boot mode
-          # lands on the caller's menu. mkksiso's internal xorriso `-map`
-          # step runs AFTER its `-update` of the edited Fedora grub.cfg,
-          # so our overlay file wins. Previously we ran a second xorriso
-          # pass after mkksiso to do the same thing, but that pass lost
-          # the `-append_partition 2 efiboot.img` GPT-partition
-          # registration mkksiso set up, breaking UEFI boot on some VM
-          # firmwares (xibo-players/xiboplayer-kiosk#146).
-          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
-            mkdir -p /tmp/grub-overlay/EFI/BOOT /tmp/grub-overlay/boot/grub2
-            cp "$ISO_GRUB_FILE" /tmp/grub-overlay/EFI/BOOT/grub.cfg
-            cp "$ISO_GRUB_FILE" /tmp/grub-overlay/boot/grub2/grub.cfg
-            MKKSISO_ARGS+=(--add /tmp/grub-overlay)
-            echo "grub.cfg overlay staged at /tmp/grub-overlay/EFI/BOOT/grub.cfg + /tmp/grub-overlay/boot/grub2/grub.cfg"
+          # Overlay grub.cfg (UEFI + BIOS-grub2) and/or isolinux.cfg
+          # (BIOS-syslinux) via mkksiso --add. mkksiso's internal xorriso
+          # overwrites the overlays with its own edited stock configs, so
+          # the post-mkksiso xorriso replay below re-applies them at
+          # every boot target.
+          if [ -n "$ISO_GRUB_FILE$ISO_ISOLINUX_FILE" ]; then
+            mkdir -p /tmp/boot-overlay
+            if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
+              mkdir -p /tmp/boot-overlay/EFI/BOOT /tmp/boot-overlay/boot/grub2
+              cp "$ISO_GRUB_FILE" /tmp/boot-overlay/EFI/BOOT/grub.cfg
+              cp "$ISO_GRUB_FILE" /tmp/boot-overlay/boot/grub2/grub.cfg
+            fi
+            if [ -n "$ISO_ISOLINUX_FILE" ] && [ -f "$ISO_ISOLINUX_FILE" ]; then
+              mkdir -p /tmp/boot-overlay/isolinux
+              cp "$ISO_ISOLINUX_FILE" /tmp/boot-overlay/isolinux/isolinux.cfg
+            fi
+            MKKSISO_ARGS+=(--add /tmp/boot-overlay)
           fi
 
           echo "mkksiso extra args: ${MKKSISO_ARGS[*]}"
@@ -693,24 +700,29 @@ jobs:
             /tmp/fedora-netinst.iso \
             "$ISO_OUT"
 
-          # Post-patch grub.cfg — our --add overlay is OVERWRITTEN by
-          # mkksiso's internal EditGrub2/RebuildEFIBoot step, so we must
-          # re-apply afterwards. `-boot_image any replay` inherits every
-          # El Torito catalog entry, MBR/GPT table and appended partition
-          # (incl. efiboot.img) from the input ISO. Only the two grub.cfg
-          # files are substituted. This avoids the #146 regression our
-          # previous plain `xorriso -map` pass caused by dropping the
-          # `-append_partition 2 efiboot.img` metadata.
-          if [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ]; then
-            mv "$ISO_OUT" "${ISO_OUT}.pre-grub"
+          # Post-patch boot configs — our --add overlays are OVERWRITTEN
+          # by mkksiso's internal EditGrub2/RebuildEFIBoot step. Re-apply
+          # via a second xorriso pass with `-boot_image any replay` so
+          # every El Torito entry, MBR/GPT table and appended partition
+          # (including efiboot.img) is inherited from the mkksiso output
+          # — just the boot-config files are substituted. Avoids the
+          # #146 regression (pre-replay xorriso pass dropped the
+          # -append_partition metadata).
+          if [ -n "$ISO_GRUB_FILE" ] || [ -n "$ISO_ISOLINUX_FILE" ]; then
+            mv "$ISO_OUT" "${ISO_OUT}.pre-boot"
+            MAPS=()
+            [ -n "$ISO_GRUB_FILE" ] && [ -f "$ISO_GRUB_FILE" ] && \
+              MAPS+=(-map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
+                    -map "$ISO_GRUB_FILE" /boot/grub2/grub.cfg)
+            [ -n "$ISO_ISOLINUX_FILE" ] && [ -f "$ISO_ISOLINUX_FILE" ] && \
+              MAPS+=(-map "$ISO_ISOLINUX_FILE" /isolinux/isolinux.cfg)
             xorriso \
-              -indev "${ISO_OUT}.pre-grub" \
+              -indev "${ISO_OUT}.pre-boot" \
               -outdev "$ISO_OUT" \
               -boot_image any replay \
-              -map "$ISO_GRUB_FILE" /EFI/BOOT/grub.cfg \
-              -map "$ISO_GRUB_FILE" /boot/grub2/grub.cfg \
+              "${MAPS[@]}" \
               --
-            rm -f "${ISO_OUT}.pre-grub"
+            rm -f "${ISO_OUT}.pre-boot"
           fi
 
           # Embed checksum so "Verify media" (rd.live.check) works
