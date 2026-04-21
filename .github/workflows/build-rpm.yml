@@ -418,27 +418,30 @@ jobs:
             NAME=$(basename "$file")
             [[ "$NAME" == RPM-GPG-KEY-* ]] && continue
 
-            # Parse fc tag and arch from filename
-            # Format: fc43.xiboplayer-electron-0.7.12-1.fc43.x86_64.rpm
+            # Filenames are standard RPM names emitted by rpmbuild, e.g.
+            #   xiboplayer-electron-0.7.22-1.fc43.x86_64.rpm
+            #   xiboplayer-electron-0.7.22-1.fc44.aarch64.rpm
+            # Parse the Fedora version from the %{dist} segment (.fcNN.).
             fc_ver=""
-            clean_name="$NAME"
             for v in $FEDORA_VERS; do
-              if [[ "$NAME" == "fc${v}."* ]]; then
+              if [[ "$NAME" == *".fc${v}."* ]]; then
                 fc_ver="$v"
-                clean_name="${NAME#fc${v}.}"
                 break
               fi
             done
-            [ -z "$fc_ver" ] && fc_ver="${FEDORA_VERS%% *}" # default to first
+            if [ -z "$fc_ver" ]; then
+              echo "  SKIP: cannot determine Fedora version from $NAME"
+              continue
+            fi
 
             # Determine arch from filename
-            if [[ "$clean_name" == *.src.rpm ]]; then
+            if [[ "$NAME" == *.src.rpm ]]; then
               arch="SRPMS"
-            elif [[ "$clean_name" == *.x86_64.rpm ]]; then
+            elif [[ "$NAME" == *.x86_64.rpm ]]; then
               arch="x86_64"
-            elif [[ "$clean_name" == *.aarch64.rpm ]]; then
+            elif [[ "$NAME" == *.aarch64.rpm ]]; then
               arch="aarch64"
-            elif [[ "$clean_name" == *.noarch.rpm ]]; then
+            elif [[ "$NAME" == *.noarch.rpm ]]; then
               arch="noarch"
             else
               echo "  SKIP unknown arch: $NAME"
@@ -446,14 +449,14 @@ jobs:
             fi
 
             # Upload to final repo path
-            DEST="$BUCKET/rpm/fedora/$fc_ver/$arch/$clean_name"
-            echo "  $clean_name → rpm/fedora/$fc_ver/$arch/"
+            DEST="$BUCKET/rpm/fedora/$fc_ver/$arch/$NAME"
+            echo "  $NAME → rpm/fedora/$fc_ver/$arch/"
             aws s3 cp "$file" "$DEST" --endpoint-url "$R2_ENDPOINT"
 
             # noarch RPMs also go to x86_64 and aarch64
             if [ "$arch" = "noarch" ]; then
               for extra in x86_64 aarch64; do
-                aws s3 cp "$file" "$BUCKET/rpm/fedora/$fc_ver/$extra/$clean_name" --endpoint-url "$R2_ENDPOINT"
+                aws s3 cp "$file" "$BUCKET/rpm/fedora/$fc_ver/$extra/$NAME" --endpoint-url "$R2_ENDPOINT"
               done
             fi
           done
