@@ -29,6 +29,10 @@ on:
         type: boolean
         default: true
         description: 'Publish DEBs to package repository (default: true for all builds)'
+      use-gh-packages:
+        type: boolean
+        default: false
+        description: 'Bind @xiboplayer scope to GitHub Packages npm and authenticate via NODE_AUTH_TOKEN. Requires the consumer to pass `secrets: inherit` so XIBO_PLAYERS_READ_TOKEN (org-level or repo-level secret) is available. Default false keeps the legacy public-npm fetch path; per-consumer opt-in via this flag.'
       ubuntu-version:
         type: string
         default: '24.04'
@@ -111,9 +115,14 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           cache: 'pnpm'
+          # See use-gh-packages input. Empty strings = no scope override.
+          registry-url: ${{ inputs.use-gh-packages && 'https://npm.pkg.github.com' || '' }}
+          scope: ${{ inputs.use-gh-packages && '@xiboplayer' || '' }}
 
       - name: Install dependencies
         if: inputs.build-command != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ inputs.use-gh-packages && secrets.XIBO_PLAYERS_READ_TOKEN || '' }}
         run: pnpm install --no-frozen-lockfile
 
       - name: Build application

@@ -33,6 +33,10 @@ on:
         type: boolean
         default: true
         description: 'Publish RPMs to package repository (default: true for all builds)'
+      use-gh-packages:
+        type: boolean
+        default: false
+        description: 'Bind @xiboplayer scope to GitHub Packages npm and authenticate via NODE_AUTH_TOKEN. Requires the consumer to pass `secrets: inherit` so XIBO_PLAYERS_READ_TOKEN (org-level or repo-level secret) is available. Default false keeps the legacy public-npm fetch path; per-consumer opt-in via this flag.'
       fedora-version:
         type: string
         default: '43'
@@ -110,9 +114,21 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           cache: 'pnpm'
+          # When use-gh-packages: true, bind @xiboplayer scope to the
+          # private GitHub Packages registry. Otherwise empty strings
+          # leave setup-node's default behaviour (no scope override).
+          # See use-gh-packages input below.
+          registry-url: ${{ inputs.use-gh-packages && 'https://npm.pkg.github.com' || '' }}
+          scope: ${{ inputs.use-gh-packages && '@xiboplayer' || '' }}
 
       - name: Install dependencies
         if: inputs.build-command != ''
+        env:
+          # When use-gh-packages: true, expose the consumer-supplied
+          # XIBO_PLAYERS_READ_TOKEN secret to pnpm's npm-protocol auth.
+          # Empty string when opted out — the registry-url binding is
+          # also empty in that case so this is a no-op.
+          NODE_AUTH_TOKEN: ${{ inputs.use-gh-packages && secrets.XIBO_PLAYERS_READ_TOKEN || '' }}
         run: pnpm install --no-frozen-lockfile
 
       - name: Build application
