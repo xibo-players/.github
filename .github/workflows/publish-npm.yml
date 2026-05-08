@@ -22,6 +22,10 @@ on:
         type: string
         default: 'npm-publish'
         description: 'GitHub environment configured for npm trusted publishing'
+      use-gh-packages:
+        type: boolean
+        default: false
+        description: 'Bind @xiboplayer scope to GitHub Packages npm for the INSTALL step (publish still goes to public npm via OIDC). Requires `secrets: inherit` so XIBO_PLAYERS_READ_TOKEN is available. Default false keeps legacy public-npm fetch path.'
 
 jobs:
   publish:
@@ -41,7 +45,12 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           cache: ${{ inputs.cache-deps && 'pnpm' || '' }}
+          # See use-gh-packages input. Affects INSTALL step only.
+          registry-url: ${{ inputs.use-gh-packages && 'https://npm.pkg.github.com' || '' }}
+          scope: ${{ inputs.use-gh-packages && '@xiboplayer' || '' }}
 
-      - run: ${{ inputs.install-command }}
+      - env:
+          NODE_AUTH_TOKEN: ${{ inputs.use-gh-packages && secrets.XIBO_PLAYERS_READ_TOKEN || '' }}
+        run: ${{ inputs.install-command }}
 
       - run: ${{ inputs.publish-command }}

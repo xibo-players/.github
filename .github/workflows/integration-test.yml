@@ -10,6 +10,10 @@ on:
         type: string
         default: ''
         description: 'CMS URL. If empty, spins up Docker Compose stack.'
+      use-gh-packages:
+        type: boolean
+        default: false
+        description: 'Bind @xiboplayer scope to GitHub Packages npm and authenticate via NODE_AUTH_TOKEN. Requires the consumer to pass `secrets: inherit` so XIBO_PLAYERS_READ_TOKEN is available. Default false keeps the legacy public-npm fetch path.'
     secrets:
       CMS_CLIENT_ID:
         required: true
@@ -31,8 +35,13 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           cache: pnpm
+          # See use-gh-packages input.
+          registry-url: ${{ inputs.use-gh-packages && 'https://npm.pkg.github.com' || '' }}
+          scope: ${{ inputs.use-gh-packages && '@xiboplayer' || '' }}
 
-      - run: pnpm install --frozen-lockfile
+      - env:
+          NODE_AUTH_TOKEN: ${{ inputs.use-gh-packages && secrets.XIBO_PLAYERS_READ_TOKEN || '' }}
+        run: pnpm install --frozen-lockfile
 
       # Start Docker Compose CMS if no external CMS URL provided
       - name: Start local CMS stack
