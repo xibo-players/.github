@@ -28,7 +28,7 @@ sudo dnf install xiboplayer-electron
 
 ```bash
 # Add repository
-echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+echo "deb [trusted=yes] https://xiboplayer.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
 sudo apt-get update
 
 # Install packages
@@ -56,7 +56,7 @@ on:
 
 jobs:
   build-rpm:
-    uses: xibo-players/.github/.github/workflows/build-rpm.yml@main
+    uses: xiboplayer/.github/.github/workflows/build-rpm.yml@main
     with:
       package-name: 'xiboplayer-electron'
       build-command: 'pnpm run build:linux'
@@ -70,7 +70,7 @@ jobs:
 ```yaml
 jobs:
   build-rpm:
-    uses: xibo-players/.github/.github/workflows/build-rpm.yml@main
+    uses: xiboplayer/.github/.github/workflows/build-rpm.yml@main
     with:
       package-name: 'xiboplayer-electron'
       build-command: 'pnpm run build:linux'
@@ -132,7 +132,7 @@ Release:        1%{?dist}
 Summary:        Xibo Player Electron Application
 
 License:        AGPLv3+
-URL:            https://github.com/xibo-players/xiboplayer-electron
+URL:            https://github.com/xiboplayer/xiboplayer-electron
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      x86_64
@@ -235,7 +235,7 @@ on:
 
 jobs:
   build-deb:
-    uses: xibo-players/.github/.github/workflows/build-deb.yml@main
+    uses: xiboplayer/.github/.github/workflows/build-deb.yml@main
     with:
       package-name: 'xiboplayer-electron'
       build-command: 'pnpm run build:linux'
@@ -276,7 +276,7 @@ Once your DEBs are published, users can install them from your gh-pages reposito
 
 ```bash
 # Add the repository
-echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+echo "deb [trusted=yes] https://xiboplayer.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
 sudo apt-get update
 
 # Install your package
@@ -300,7 +300,7 @@ on:
 
 jobs:
   build-pwa:
-    uses: xibo-players/.github/.github/workflows/build-pwa.yml@main
+    uses: xiboplayer/.github/.github/workflows/build-pwa.yml@main
     with:
       node-version: '22'
       build-command: 'pnpm run build'
@@ -338,7 +338,7 @@ on:
 
 jobs:
   publish:
-    uses: xibo-players/.github/.github/workflows/publish-npm.yml@main
+    uses: xiboplayer/.github/.github/workflows/publish-npm.yml@main
     with:
       node-version: '22'
       publish-command: 'pnpm publish --no-git-checks --access public'
@@ -385,7 +385,7 @@ permissions:
 
 jobs:
   build:
-    uses: xibo-players/.github/.github/workflows/build-iso.yml@<pinned-sha>
+    uses: xiboplayer/.github/.github/workflows/build-iso.yml@<pinned-sha>
     with:
       package-name: xiboplayer-kiosk
       kickstart-file: 'kickstart/xiboplayer-kiosk.ks'
@@ -489,7 +489,7 @@ permissions:
 
 jobs:
   build:
-    uses: xibo-players/.github/.github/workflows/build-iso.yml@<pinned-sha>
+    uses: xiboplayer/.github/.github/workflows/build-iso.yml@<pinned-sha>
     with:
       package-name: xiboplayer-kiosk
       kickstart-file: 'kickstart/xiboplayer-kiosk.ks'
@@ -569,7 +569,7 @@ on:
 
 jobs:
   test:
-    uses: xibo-players/.github/.github/workflows/test.yml@main
+    uses: xiboplayer/.github/.github/workflows/test.yml@main
     with:
       node-version: '22'
       test-command: 'pnpm test'
@@ -610,14 +610,14 @@ on:
 
 jobs:
   test:
-    uses: xibo-players/.github/.github/workflows/test.yml@main
+    uses: xiboplayer/.github/.github/workflows/test.yml@main
     with:
       node-version: '22'
 
   build-rpm:
     needs: test
     if: github.event_name != 'pull_request'
-    uses: xibo-players/.github/.github/workflows/build-rpm.yml@main
+    uses: xiboplayer/.github/.github/workflows/build-rpm.yml@main
     with:
       package-name: 'my-package'
       build-command: 'pnpm run build:linux'

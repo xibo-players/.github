@@ -20,7 +20,7 @@ This guide explains how the custom domain `dl.xiboplayer.org` was configured. Ke
 
 ## How It Was Configured
 
-Instead of using the default GitHub Pages URL (`xibo-players.github.io/.github`), we configured the custom domain `dl.xiboplayer.org` for cleaner, more professional URLs.
+Instead of using the default GitHub Pages URL (`xiboplayer.github.io/.github`), we configured the custom domain `dl.xiboplayer.org` for cleaner, more professional URLs.
 
 **Result (Now Active):**
 - Repository URLs: `https://dl.xiboplayer.org/rpm/fedora/43/x86_64/`
@@ -41,7 +41,7 @@ A CNAME record was added in the DNS provider's control panel:
 
 | Type  | Name | Value                          | TTL  |
 |-------|------|--------------------------------|------|
-| CNAME | dnf  | xibo-players.github.io.        | 3600 |
+| CNAME | dnf  | xiboplayer.github.io.        | 3600 |
 
 **Important:** Note the trailing dot (`.`) after `github.io` - some DNS providers require it.
 
@@ -54,7 +54,7 @@ A CNAME record was added in the DNS provider's control panel:
 4. Click "Add record"
 5. Type: `CNAME`
 6. Name: `dnf`
-7. Target: `xibo-players.github.io`
+7. Target: `xiboplayer.github.io`
 8. Proxy status: DNS only (gray cloud icon)
 9. Click Save
 
@@ -64,7 +64,7 @@ A CNAME record was added in the DNS provider's control panel:
 3. Click "Add" under Records
 4. Type: `CNAME`
 5. Host: `dnf`
-6. Points to: `xibo-players.github.io`
+6. Points to: `xiboplayer.github.io`
 7. TTL: 1 Hour
 8. Click Save
 
@@ -75,7 +75,7 @@ A CNAME record was added in the DNS provider's control panel:
 4. Add New Record
 5. Type: `CNAME Record`
 6. Host: `dnf`
-7. Value: `xibo-players.github.io.`
+7. Value: `xiboplayer.github.io.`
 8. Click Save
 
 ### Verify DNS Propagation
@@ -90,7 +90,7 @@ nslookup dl.xiboplayer.org
 dig dl.xiboplayer.org CNAME +short
 ```
 
-Expected output: `xibo-players.github.io.`
+Expected output: `xiboplayer.github.io.`
 
 ## Step 2: Configure GitHub Pages Custom Domain (✅ Completed)
 
@@ -98,7 +98,7 @@ The custom domain has been configured in GitHub Pages settings.
 
 ### Via GitHub Web Interface
 
-1. Go to repository: https://github.com/xibo-players/.github
+1. Go to repository: https://github.com/xiboplayer/.github
 2. Navigate to **Settings** → **Pages**
 3. Under "Custom domain", enter: `dl.xiboplayer.org`
 4. Click **Save**
@@ -136,7 +136,7 @@ All documentation files have been updated to reference the custom domain:
 
 **Before:**
 ```
-https://xibo-players.github.io/.github/rpm/
+https://xiboplayer.github.io/.github/rpm/
 ```
 
 **After:**
@@ -195,7 +195,7 @@ dnf repoquery --repofrompath=xibo,https://dl.xiboplayer.org/rpm/fedora/43/x86_64
 
 Now that the custom domain is active, users enjoy:
 
-✅ **Cleaner URLs**: `dl.xiboplayer.org` vs `xibo-players.github.io/.github`  
+✅ **Cleaner URLs**: `dl.xiboplayer.org` vs `xiboplayer.github.io/.github`  
 ✅ **Professional appearance**: Branded domain name  
 ✅ **Easier to remember**: Simple, intuitive URL structure  
 ✅ **Better SEO**: Custom domain improves search visibility  
@@ -218,8 +218,8 @@ For reference or to set up additional custom domains, the complete setup process
 **Solutions:**
 1. Wait longer - DNS can take up to 48 hours to propagate globally
 2. Check your DNS provider's control panel for typos
-3. Ensure CNAME points to `xibo-players.github.io` (not `.github`)
-4. Some providers need trailing dot: `xibo-players.github.io.`
+3. Ensure CNAME points to `xiboplayer.github.io` (not `.github`)
+4. Some providers need trailing dot: `xiboplayer.github.io.`
 
 ### GitHub Pages Shows "Domain's DNS record could not be retrieved"
 
@@ -230,7 +230,7 @@ For reference or to set up additional custom domains, the complete setup process
 2. Temporarily disable "Enforce HTTPS"
 3. Remove and re-add the custom domain
 4. Check DNS with `dig dl.xiboplayer.org CNAME +short`
-5. Ensure CNAME points to `xibo-players.github.io` (not the full path)
+5. Ensure CNAME points to `xiboplayer.github.io` (not the full path)
 
 ### HTTPS Certificate Issues
 

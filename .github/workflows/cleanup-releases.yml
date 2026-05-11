@@ -9,7 +9,7 @@ name: Cleanup old releases (reusable)
 # Usage:
 #   jobs:
 #     cleanup:
-#       uses: xibo-players/.github/.github/workflows/cleanup-releases.yml@main
+#       uses: xiboplayer/.github/.github/workflows/cleanup-releases.yml@main
 #       with:
 #         keep-versioned: 3
 #         keep-dated: 7

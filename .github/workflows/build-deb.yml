@@ -62,7 +62,7 @@ on:
         description: 'Passphrase for the GPG key'
       PAGES_TOKEN:
         required: false
-        description: 'PAT with contents:write on xibo-players.github.io for central repo publishing'
+        description: 'PAT with contents:write on xiboplayer.github.io for central repo publishing'
       R2_ACCESS_KEY_ID:
         required: false
       R2_SECRET_ACCESS_KEY:
