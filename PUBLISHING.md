@@ -4,7 +4,7 @@
 
 To publish the GitHub Pages site for this repository:
 
-1. **Go to Actions tab**: https://github.com/xibo-players/.github/actions
+1. **Go to Actions tab**: https://github.com/xiboplayer/.github/actions
 2. **Select workflow**: "Publish GitHub Pages"
 3. **Click**: "Run workflow"
 4. **Wait**: ~1 minute for completion

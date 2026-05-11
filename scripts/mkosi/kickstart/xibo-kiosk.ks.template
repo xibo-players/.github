@@ -96,7 +96,7 @@ dnf swap -y ffmpeg-free ffmpeg --allowerasing || true
 # cat > /etc/yum.repos.d/xiboplayer.repo << 'EOF'
 # [xiboplayer]
 # name=Xibo Player
-# baseurl=https://xibo-players.github.io/.github/rpm/packages/
+# baseurl=https://xiboplayer.github.io/.github/rpm/packages/
 # enabled=1
 # gpgcheck=0
 # EOF

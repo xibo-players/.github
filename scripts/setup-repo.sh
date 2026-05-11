@@ -1,11 +1,11 @@
 #!/bin/bash
 # Setup Xibo Players RPM Repository
 # ==================================
-# This script configures your Fedora/RHEL system to use the xibo-players RPM repository
+# This script configures your Fedora/RHEL system to use the xiboplayer RPM repository
 
 set -e
 
-REPO_NAME="xibo-players"
+REPO_NAME="xiboplayer"
 REPO_URL="https://dl.xiboplayer.org/rpm/fedora/\$releasever/\$basearch/"
 REPO_FILE="/etc/yum.repos.d/${REPO_NAME}.repo"
 
@@ -72,7 +72,7 @@ echo "==================================="
 echo "✓ Setup complete!"
 echo "==================================="
 echo ""
-echo "You can now install packages from the xibo-players repository:"
+echo "You can now install packages from the xiboplayer repository:"
 echo ""
 echo "  dnf search xibo"
 echo "  dnf install <package-name>"
