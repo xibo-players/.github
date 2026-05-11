@@ -28,7 +28,7 @@ sudo dnf install xiboplayer-electron
 
 ```bash
 # Add repository
-echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+echo "deb [trusted=yes] https://xiboplayer.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
 sudo apt-get update
 
 # Install packages
@@ -132,7 +132,7 @@ Release:        1%{?dist}
 Summary:        Xibo Player Electron Application
 
 License:        AGPLv3+
-URL:            https://github.com/xibo-players/xiboplayer-electron
+URL:            https://github.com/xiboplayer/xiboplayer-electron
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      x86_64
@@ -276,7 +276,7 @@ Once your DEBs are published, users can install them from your gh-pages reposito
 
 ```bash
 # Add the repository
-echo "deb [trusted=yes] https://xibo-players.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
+echo "deb [trusted=yes] https://xiboplayer.github.io/.github/deb/ubuntu/24.04 ./" | sudo tee /etc/apt/sources.list.d/xibo-players.list
 sudo apt-get update
 
 # Install your package

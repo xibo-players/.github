@@ -34,7 +34,7 @@ discretion.
 ## Scope
 
 This policy applies to all repositories in the
-[xibo-players](https://github.com/xibo-players) organisation. For
+[xibo-players](https://github.com/xiboplayer) organisation. For
 vulnerabilities in upstream Xibo CMS, please report to the Xibo project at
 [xibosignage/xibo-cms](https://github.com/xibosignage/xibo-cms).
 
